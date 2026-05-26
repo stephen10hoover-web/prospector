@@ -145,13 +145,11 @@ export function SearchForm() {
         return
       }
 
-      const { searchId } = await res.json()
-      setPhase('searching')
-
-      // Start polling every 2 seconds
-      pollRef.current = setInterval(() => pollStatus(searchId), 2000)
-      // Also poll immediately
-      await pollStatus(searchId)
+      const data = await res.json()
+      const searchId = data.searchId
+      setPhase('done')
+      toast.success(`Found ${data.count ?? 0} businesses!`)
+      setTimeout(() => router.push(`/leads?search_id=${searchId}`), 500)
     } catch (error) {
       stopPolling()
       setPhase('failed')
