@@ -93,7 +93,7 @@ export function SearchForm() {
     }
 
     try {
-      const res = await fetch(`/api/search/${searchId}/status`)
+      const res = await fetch(`/api/search/${searchId}/status`, { cache: 'no-store' })
       if (!res.ok) return
 
       const data = await res.json()
