@@ -109,13 +109,12 @@ export async function searchBusinesses(params: {
     }))
   }
 
-  const query = `${category} in ${location}`
+  const query = `${category} near ${location}`
   const url = new URL('https://serpapi.com/search.json')
-  url.searchParams.set('engine', 'google_local')
+  url.searchParams.set('engine', 'google_maps')
   url.searchParams.set('q', query)
-  url.searchParams.set('location', location)
+  url.searchParams.set('type', 'search')
   url.searchParams.set('hl', 'en')
-  url.searchParams.set('gl', 'us')
   url.searchParams.set('api_key', apiKey)
 
   console.log('[business-discovery] Calling SerpAPI:', query)
