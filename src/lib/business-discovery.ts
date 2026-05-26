@@ -109,13 +109,13 @@ export async function searchBusinesses(params: {
     }))
   }
 
-  const query = `${category} near ${location}`
+  const query = `${category} in ${location}`
   const url = new URL('https://serpapi.com/search.json')
-  url.searchParams.set('engine', 'google_maps')
+  url.searchParams.set('engine', 'google_local')
   url.searchParams.set('q', query)
   url.searchParams.set('location', location)
-  url.searchParams.set('radius', String(radius * 1609))
   url.searchParams.set('hl', 'en')
+  url.searchParams.set('gl', 'us')
   url.searchParams.set('api_key', apiKey)
 
   console.log('[business-discovery] Calling SerpAPI:', query)
@@ -134,12 +134,12 @@ export async function searchBusinesses(params: {
     }
 
     const data = await response.json()
-    console.log('[business-discovery] local_results count:', data.local_results?.length ?? 0)
-    const results: SerpApiResult[] = data.local_results ?? []
+    const results = data.local_results ?? data.local_ads ?? []
+    console.log('[business-discovery] results count:', results.length)
 
     return results
-      .filter((r) => r.title && r.address)
-      .map((r) => {
+      .filter((r: SerpApiResult) => r.title && r.address)
+      .map((r: SerpApiResult) => {
         const { city, state } = parseCity(r.address)
         return {
           name: r.title,
