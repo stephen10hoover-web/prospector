@@ -1,5 +1,40 @@
 import type { WebsiteAnalysis } from '@/types'
 
+const MAX_HTML_BYTES = 500_000 // 500 KB — prevents memory DoS from huge pages
+
+// SSRF guard: block private/loopback addresses and non-http(s) schemes
+function isSsrfBlockedUrl(rawUrl: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return true
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true
+
+  const host = parsed.hostname.toLowerCase().replace(/^\[/, '').replace(/\]$/, '')
+
+  // Loopback / localhost
+  if (host === 'localhost' || host === '0.0.0.0' || host === '::1') return true
+
+  // IPv4 private ranges
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (ipv4) {
+    const [a, b] = [Number(ipv4[1]), Number(ipv4[2])]
+    if (a === 10) return true                          // 10.0.0.0/8
+    if (a === 127) return true                         // 127.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true   // 172.16.0.0/12
+    if (a === 192 && b === 168) return true            // 192.168.0.0/16
+    if (a === 169 && b === 254) return true            // 169.254.0.0/16 (link-local)
+    if (a === 100 && b >= 64 && b <= 127) return true  // 100.64.0.0/10 (CGNAT)
+    if (a === 0) return true                           // 0.0.0.0/8
+    if (a >= 240) return true                          // 240.0.0.0/4 (reserved)
+  }
+
+  return false
+}
+
 const FRAMEWORK_SIGNATURES: Record<string, string[]> = {
   WordPress: ['wp-content', 'wp-includes', 'wordpress'],
   Wix: ['wix.com', '_wix_', 'wixsite.com', 'X-Wix-Published-Version'],
@@ -117,6 +152,22 @@ export async function analyzeWebsite(url: string | null): Promise<WebsiteAnalysi
   }
 
   const normalizedUrl = url.startsWith('http') ? url : `https://${url}`
+
+  // SSRF protection — reject private/loopback destinations
+  if (isSsrfBlockedUrl(normalizedUrl)) {
+    return {
+      hasWebsite: false,
+      qualityScore: 0,
+      issues: ['Invalid or unreachable website URL'],
+      ssl: false,
+      mobile: false,
+      hasContactForm: false,
+      domainAge: null,
+      framework: null,
+      summary: 'Website URL is invalid or not publicly accessible.',
+    }
+  }
+
   const ssl = normalizedUrl.startsWith('https://')
 
   try {
@@ -147,7 +198,9 @@ export async function analyzeWebsite(url: string | null): Promise<WebsiteAnalysi
       }
     }
 
-    const html = await response.text()
+    // Cap payload to prevent memory DoS from huge pages
+    const rawText = await response.text()
+    const html = rawText.length > MAX_HTML_BYTES ? rawText.slice(0, MAX_HTML_BYTES) : rawText
     const headers = response.headers
 
     const mobile = checkMobileReady(html)

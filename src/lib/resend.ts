@@ -1,5 +1,14 @@
 import { Resend } from 'resend'
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+}
+
 function getResendClient(): Resend {
   if (!process.env.RESEND_API_KEY) {
     throw new Error('RESEND_API_KEY is not configured')
@@ -17,8 +26,11 @@ function buildHtmlEmail(params: {
   const { body, businessName } = params
   const bodyHtml = body
     .split('\n')
-    .map((line) => (line.trim() === '' ? '<br/>' : `<p style="margin:0 0 12px 0">${line}</p>`))
+    .map((line) =>
+      line.trim() === '' ? '<br/>' : `<p style="margin:0 0 12px 0">${escapeHtml(line)}</p>`
+    )
     .join('')
+  const safeBusinessName = escapeHtml(businessName)
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -40,7 +52,7 @@ function buildHtmlEmail(params: {
           <tr>
             <td style="padding: 20px 40px; border-top: 1px solid #e5e7eb; background: #f9f9f9;">
               <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
-                This email was sent to ${businessName}.
+                This email was sent to ${safeBusinessName}.
                 If you'd like to unsubscribe from future emails,
                 <a href="${APP_URL}/unsubscribe" style="color: #6b7280;">click here</a>.
               </p>

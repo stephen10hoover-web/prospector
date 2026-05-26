@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 export const FREE_LIMITS = {
   searches: 5,
   emails: 20,
+  outreachGenerations: 20,
 }
 
 export const stripe = process.env.STRIPE_SECRET_KEY

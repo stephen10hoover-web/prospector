@@ -13,8 +13,8 @@ import { checkSearchLimit, incrementUsage } from '@/lib/usage'
 import { z } from 'zod'
 
 const searchSchema = z.object({
-  category: z.string().min(1, 'Category is required'),
-  location: z.string().min(1, 'Location is required'),
+  category: z.string().min(1, 'Category is required').max(100),
+  location: z.string().min(1, 'Location is required').max(200),
   radius: z.number().int().min(1).max(100).default(20),
 })
 

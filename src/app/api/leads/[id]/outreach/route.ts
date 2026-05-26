@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { generateOutreachEmail } from '@/lib/claude'
+import { checkOutreachGenerationLimit, incrementUsage } from '@/lib/usage'
 import type { Business } from '@/types'
 
 export async function POST(
@@ -16,6 +17,15 @@ export async function POST(
 
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Gate AI generation — prevents free users from draining Claude API credits
+    const limitCheck = await checkOutreachGenerationLimit(session.user.id)
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { error: limitCheck.message, upgrade: true },
+        { status: 402 }
+      )
     }
 
     const { data: business, error: fetchError } = await supabase
@@ -60,6 +70,8 @@ export async function POST(
       .from('businesses')
       .update({ outreach_status: 'generated' })
       .eq('id', params.id)
+
+    await incrementUsage(session.user.id, 'outreach_generated_count')
 
     return NextResponse.json(outreach)
   } catch (error) {

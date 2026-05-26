@@ -6,9 +6,9 @@ import { checkEmailLimit, incrementUsage } from '@/lib/usage'
 import { z } from 'zod'
 
 const sendSchema = z.object({
-  to: z.string().email('Invalid email address'),
-  subject: z.string().min(1, 'Subject is required'),
-  body: z.string().min(1, 'Email body is required'),
+  to: z.string().email('Invalid email address').max(254),
+  subject: z.string().min(1, 'Subject is required').max(200),
+  body: z.string().min(1, 'Email body is required').max(10_000),
 })
 
 export async function POST(

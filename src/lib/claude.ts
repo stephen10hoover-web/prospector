@@ -3,6 +3,12 @@ import type { Business, OutreachEmail } from '@/types'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+// Strip control characters and truncate to prevent prompt injection via business data
+function sanitize(value: string | null | undefined, maxLen: number): string {
+  if (!value) return ''
+  return value.replace(/[\x00-\x1F\x7F]/g, ' ').slice(0, maxLen).trim()
+}
+
 const OUTREACH_SYSTEM_PROMPT = `You are an expert cold email specialist who writes highly personalized, conversion-focused outreach emails for digital marketing and web development agencies.
 
 Your emails have these characteristics:
@@ -31,20 +37,25 @@ Always return valid JSON matching exactly this schema:
 The talkingPoints array should contain 3 specific insights about why this business is a good opportunity.`
 
 export async function generateOutreachEmail(business: Business): Promise<OutreachEmail> {
+  const name = sanitize(business.name, 100)
+  const category = sanitize(business.category, 80)
+  const city = sanitize(business.city, 80)
+  const state = sanitize(business.state, 50)
+
   const websiteStatus = business.has_website
     ? `has a website with a quality score of ${business.website_quality_score}/100`
     : 'has NO website'
 
   const websiteIssues =
     business.website_issues && business.website_issues.length > 0
-      ? `Website issues detected: ${business.website_issues.join(', ')}.`
+      ? `Website issues detected: ${business.website_issues.map((i) => sanitize(i, 120)).join(', ')}.`
       : ''
 
   const userMessage = `Generate a cold outreach email for this business:
 
-Business Name: ${business.name}
-Category: ${business.category}
-City: ${business.city}, ${business.state}
+Business Name: ${name}
+Category: ${category}
+City: ${city}, ${state}
 Google Rating: ${business.rating} stars
 Number of Reviews: ${business.review_count}
 Website Status: ${websiteStatus}
@@ -111,9 +122,9 @@ export async function qualifyLead(
       {
         role: 'user',
         content: `Qualify this lead:
-Name: ${business.name}
-Category: ${business.category}
-City: ${business.city}, ${business.state}
+Name: ${sanitize(business.name, 100)}
+Category: ${sanitize(business.category, 80)}
+City: ${sanitize(business.city, 80)}, ${sanitize(business.state, 50)}
 Rating: ${business.rating} (${business.review_count} reviews)
 Has Website: ${business.has_website}
 Website Quality: ${business.website_quality_score}/100
