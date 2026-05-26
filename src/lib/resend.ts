@@ -1,6 +1,11 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+function getResendClient(): Resend {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is not configured')
+  }
+  return new Resend(process.env.RESEND_API_KEY)
+}
 
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'outreach@yourdomain.com'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
@@ -58,6 +63,7 @@ export async function sendOutreachEmail(params: {
   const { to, subject, body, businessName } = params
 
   const html = buildHtmlEmail({ body, businessName })
+  const resend = getResendClient()
 
   const { data, error } = await resend.emails.send({
     from: FROM_EMAIL,

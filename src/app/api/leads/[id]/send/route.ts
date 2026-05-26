@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { sendOutreachEmail } from '@/lib/resend'
+import { checkEmailLimit, incrementUsage } from '@/lib/usage'
 import { z } from 'zod'
 
 const sendSchema = z.object({
@@ -22,6 +23,15 @@ export async function POST(
 
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Usage gate
+    const limitCheck = await checkEmailLimit(session.user.id)
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { error: limitCheck.message, upgrade: true, current: limitCheck.current, limit: limitCheck.limit },
+        { status: 402 }
+      )
     }
 
     const body = await request.json()
@@ -67,6 +77,8 @@ export async function POST(
       .from('businesses')
       .update({ outreach_status: 'sent' })
       .eq('id', params.id)
+
+    await incrementUsage(session.user.id, 'emails_sent_count')
 
     return NextResponse.json({ success: true, messageId: result.id })
   } catch (error) {

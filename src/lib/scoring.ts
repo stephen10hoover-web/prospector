@@ -91,7 +91,7 @@ export function calculateLeadScore(business: Partial<Business>): number {
     (signal) => name.includes(signal)
   )
   if (isFranchise) {
-    return Math.max(0, score - 40)
+    return 5
   }
 
   if (!business.has_website) {

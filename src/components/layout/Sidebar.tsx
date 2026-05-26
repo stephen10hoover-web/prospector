@@ -17,11 +17,13 @@ import {
   Menu,
   X,
   ChevronRight,
+  Settings,
 } from 'lucide-react'
 
 interface SidebarProps {
   userEmail: string
   userId: string
+  plan?: 'free' | 'pro'
 }
 
 const navItems = [
@@ -40,13 +42,18 @@ const navItems = [
     href: '/leads',
     icon: Users,
   },
+  {
+    label: 'Settings',
+    href: '/settings',
+    icon: Settings,
+  },
 ]
 
 function getInitials(email: string): string {
   return email.slice(0, 2).toUpperCase()
 }
 
-export function Sidebar({ userEmail, userId }: SidebarProps) {
+export function Sidebar({ userEmail, userId, plan = 'free' }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createBrowserClient()
@@ -110,7 +117,7 @@ export function Sidebar({ userEmail, userId }: SidebarProps) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-medium truncate">{userEmail}</p>
-            <p className="text-xs text-muted-foreground">Free plan</p>
+            <p className="text-xs text-muted-foreground capitalize">{plan} plan</p>
           </div>
         </div>
         <Button

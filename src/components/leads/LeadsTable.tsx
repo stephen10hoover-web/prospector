@@ -191,7 +191,14 @@ export function LeadsTable({ leads: initialLeads }: LeadsTableProps) {
                         <p className="text-xs text-muted-foreground">{lead.phone}</p>
                       )}
                       {lead.email && (
-                        <p className="text-xs text-muted-foreground truncate max-w-[140px]">{lead.email}</p>
+                        <div>
+                          <p className="text-xs text-muted-foreground truncate max-w-[140px]">{lead.email}</p>
+                          {lead.email_confidence != null && (
+                            <p className="text-xs text-muted-foreground/60">
+                              {lead.email_confidence}% conf.
+                            </p>
+                          )}
+                        </div>
                       )}
                       {!lead.phone && !lead.email && (
                         <p className="text-xs text-muted-foreground">—</p>

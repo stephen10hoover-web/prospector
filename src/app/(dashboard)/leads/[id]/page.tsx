@@ -83,7 +83,7 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={(statusColors[biz.outreach_status] as 'default' | 'secondary' | 'outline' | 'destructive') ?? 'secondary'}>
-            {biz.outreach_status.replace('_', ' ')}
+            {biz.outreach_status.replaceAll('_', ' ')}
           </Badge>
         </div>
       </div>
@@ -107,9 +107,17 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
               </div>
             )}
             {biz.email && (
-              <div className="flex items-center gap-2 text-sm">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                <a href={`mailto:${biz.email}`} className="hover:text-primary">{biz.email}</a>
+              <div className="flex items-start gap-2 text-sm">
+                <Mail className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div>
+                  <a href={`mailto:${biz.email}`} className="hover:text-primary">{biz.email}</a>
+                  {biz.email_source && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {biz.email_source === 'hunter' ? 'Found via Hunter.io' : biz.email_source}
+                      {biz.email_confidence != null ? ` · ${biz.email_confidence}% confidence` : ''}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
             {biz.website_url && (
@@ -227,7 +235,7 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium capitalize">{log.type.replace('_', ' ')}</span>
+                      <span className="text-sm font-medium capitalize">{log.type.replaceAll('_', ' ')}</span>
                       <div className="flex items-center gap-2">
                         <Badge variant={log.status === 'sent' ? 'default' : log.status === 'failed' ? 'destructive' : 'secondary'} className="text-xs">
                           {log.status}

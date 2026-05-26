@@ -7,18 +7,21 @@ Find high-opportunity local businesses, score them with AI, and send personalize
 - **Next.js 14** (App Router, Server Components)
 - **TypeScript** + **TailwindCSS** + **ShadCN UI**
 - **Supabase** (Auth + PostgreSQL with RLS)
-- **Claude API** (claude-sonnet-4-6) for outreach generation
+- **Claude API** (`claude-sonnet-4-6`) for outreach generation and lead qualification
 - **Resend** for email delivery
 - **SerpAPI** for Google Maps business discovery
+- **Hunter.io** for email address discovery
+- **Stripe** for subscription billing
 
 ---
 
 ## Quick Start
 
-### 1. Clone and install dependencies
+### 1. Clone and install
 
 ```bash
-cd C:\Users\User\prospector
+git clone https://github.com/stephen10hoover-web/prospector
+cd prospector
 npm install
 ```
 
@@ -28,40 +31,59 @@ npm install
 cp .env.example .env.local
 ```
 
-Edit `.env.local` and fill in your keys:
+Fill in `.env.local`:
 
-| Variable | Where to get it |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project → Settings → API |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project → Settings → API |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase project → Settings → API |
-| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
-| `RESEND_API_KEY` | [resend.com/api-keys](https://resend.com/api-keys) |
-| `RESEND_FROM_EMAIL` | A verified Resend sender email |
-| `SERP_API_KEY` | [serpapi.com](https://serpapi.com) — optional, mock data used without it |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` for local dev |
+| Variable | Required | Where to get it |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase → Settings → API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase → Settings → API |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase → Settings → API |
+| `ANTHROPIC_API_KEY` | Yes | console.anthropic.com |
+| `RESEND_API_KEY` | Yes | resend.com/api-keys |
+| `RESEND_FROM_EMAIL` | Yes | A verified Resend sender address |
+| `SERP_API_KEY` | No | serpapi.com — mock data used without it |
+| `HUNTER_API_KEY` | No | hunter.io — email discovery disabled without it |
+| `STRIPE_SECRET_KEY` | No | dashboard.stripe.com — billing disabled without it |
+| `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook endpoint secret |
+| `STRIPE_PRO_PRICE_ID` | No | Stripe product price ID for Pro plan |
+| `NEXT_PUBLIC_APP_URL` | Yes | `http://localhost:3000` for local dev |
 
-### 3. Run the Supabase migration
+### 3. Run database migrations
 
-In the Supabase dashboard, go to **SQL Editor** and run the contents of:
+In Supabase dashboard → SQL Editor, run each migration in order:
 
 ```
 supabase/migrations/001_initial.sql
+supabase/migrations/002_improvements.sql
+supabase/migrations/003_billing.sql
 ```
 
-Or if you have the Supabase CLI:
+Or with the Supabase CLI:
 
 ```bash
 supabase db push
 ```
 
-### 4. Start the dev server
+### 4. Set up Stripe (optional)
+
+1. Create a product in Stripe dashboard — name it "Prospector Pro"
+2. Add a recurring price ($29/month) and copy the Price ID → `STRIPE_PRO_PRICE_ID`
+3. Create a webhook endpoint: `https://yourdomain.com/api/billing/webhook`
+4. Subscribe to: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`
+5. Copy the signing secret → `STRIPE_WEBHOOK_SECRET`
+
+For local webhook testing:
+```bash
+stripe listen --forward-to localhost:3000/api/billing/webhook
+```
+
+### 5. Start the dev server
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) — you'll be redirected to the login page.
+Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
@@ -69,66 +91,65 @@ Open [http://localhost:3000](http://localhost:3000) — you'll be redirected to 
 
 ### Lead Discovery
 - Search any business category + location
-- Powered by SerpAPI Google Maps integration
-- Falls back to realistic mock data when `SERP_API_KEY` is not set (great for dev)
+- Powered by SerpAPI (Google Maps)
+- Falls back to realistic mock data without `SERP_API_KEY`
+- Background processing — search returns immediately, results stream in
+
+### Email Discovery
+- Automatically finds business contact emails via Hunter.io
+- Confidence score stored per email
+- Skipped gracefully if Hunter.io is not configured
 
 ### AI Lead Scoring
-- Deterministic scoring based on website quality, review count, ratings, and business category
-- High-ticket categories (roofing, med spas, contractors) get bonus points
-- Franchise detection automatically reduces score
+- Deterministic scoring (website quality, reviews, ratings, category)
+- Claude-powered qualification for reasoning
+- Franchise detection caps score at 5
 
 ### Website Analysis
-- Fetches and analyzes business websites server-side
-- Detects: SSL, mobile-friendliness, contact forms, CMS/framework
-- Issues list shows exactly what's wrong (your sales pitch)
+- SSL, mobile-friendliness, contact form detection
+- Framework detection (WordPress, Wix, Squarespace, etc.)
+- Issues list for use in sales pitches
 
-### AI Outreach (Claude)
-- Generates personalized cold emails using `claude-sonnet-4-6`
-- Prompt caching on system prompt for efficiency
+### AI Outreach
+- Personalized cold emails via `claude-sonnet-4-6`
+- Prompt caching for efficiency
 - Editable before sending
-- Talking points extracted for sales calls
+- Talking points for sales calls
 
-### Email Delivery (Resend)
-- HTML email with clean template and unsubscribe footer
-- Full outreach history log per lead
-- Status tracking: not_contacted → generated → sent → replied → interested/closed
+### Email Delivery
+- HTML email via Resend
+- Unsubscribe footer
+- Full outreach history per lead
+- Status tracking: not_contacted → sent → replied → interested/closed
 
----
-
-## Project Structure
-
-```
-src/
-├── app/
-│   ├── (auth)/          # Login + Signup pages
-│   ├── (dashboard)/     # Protected app pages
-│   │   ├── dashboard/   # Stats overview
-│   │   ├── search/      # Business discovery form
-│   │   └── leads/       # Leads table + detail pages
-│   └── api/             # REST API routes
-├── components/
-│   ├── layout/          # Sidebar
-│   ├── leads/           # LeadsTable, LeadFilters, LeadStatusSelect
-│   ├── search/          # SearchForm
-│   ├── outreach/        # OutreachModal
-│   └── ui/              # ShadCN components
-├── lib/
-│   ├── claude.ts        # Claude API integration
-│   ├── resend.ts        # Email sending
-│   ├── scoring.ts       # Lead scoring algorithm
-│   ├── website-analyzer.ts  # Website quality analysis
-│   ├── business-discovery.ts # SerpAPI integration
-│   ├── supabase.ts      # Browser Supabase client
-│   └── supabase-server.ts   # Server Supabase client (SSR)
-└── types/
-    └── index.ts         # All TypeScript types
-```
+### Billing
+- Free tier: 5 searches/month, 20 emails/month
+- Pro ($29/month): unlimited searches and emails
+- Stripe Checkout + Billing Portal
+- Webhook-driven subscription state
 
 ---
 
-## Development Notes
+## Deployment (Vercel)
 
-- The app works fully without `SERP_API_KEY` — mock data with 5 Austin businesses is used
-- Without `ANTHROPIC_API_KEY`, outreach generation will fail with a 500 error
-- Without `RESEND_API_KEY`, email sending will fail — but generation still works
-- All Supabase tables have Row Level Security enabled — users only see their own data
+1. Push to GitHub
+2. Import project in Vercel
+3. Set all environment variables in Vercel dashboard
+4. Set `NEXT_PUBLIC_APP_URL` to your production domain
+5. Register Stripe webhook pointing to `https://yourdomain.com/api/billing/webhook`
+
+---
+
+## Troubleshooting
+
+**Search times out in production**
+Vercel Hobby has a 10s function limit. Upgrade to Vercel Pro (60s) or reduce the SerpAPI result count.
+
+**Emails not sending**
+Verify `RESEND_FROM_EMAIL` is a verified sender in Resend. Check that the recipient address is valid.
+
+**Stripe webhooks not firing**
+Confirm `STRIPE_WEBHOOK_SECRET` matches the endpoint secret in Stripe dashboard. Use `stripe listen` for local testing.
+
+**Hunter.io not finding emails**
+Hunter.io requires a website URL. Businesses without websites will not have emails discovered.

@@ -4,8 +4,10 @@ import { LeadsTable } from '@/components/leads/LeadsTable'
 import { LeadFilters } from '@/components/leads/LeadFilters'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { Search } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Business } from '@/types'
+
+const PAGE_SIZE = 100
 
 interface LeadsPageProps {
   searchParams: {
@@ -15,39 +17,35 @@ interface LeadsPageProps {
     minScore?: string
     maxScore?: string
     search_id?: string
+    page?: string
   }
 }
 
-async function getLeads(userId: string, filters: LeadsPageProps['searchParams']): Promise<Business[]> {
+async function getLeads(
+  userId: string,
+  filters: LeadsPageProps['searchParams']
+): Promise<{ leads: Business[]; total: number }> {
   const supabase = createServerClient()
+  const page = Math.max(1, parseInt(filters.page ?? '1'))
+  const from = (page - 1) * PAGE_SIZE
+  const to = from + PAGE_SIZE - 1
 
   let query = supabase
     .from('businesses')
-    .select('*')
+    .select('*', { count: 'exact' })
     .eq('user_id', userId)
     .order('lead_score', { ascending: false })
+    .range(from, to)
 
-  if (filters.search_id) {
-    query = query.eq('search_id', filters.search_id)
-  }
-  if (filters.category) {
-    query = query.ilike('category', `%${filters.category}%`)
-  }
-  if (filters.city) {
-    query = query.ilike('city', `%${filters.city}%`)
-  }
-  if (filters.status) {
-    query = query.eq('outreach_status', filters.status)
-  }
-  if (filters.minScore) {
-    query = query.gte('lead_score', parseInt(filters.minScore))
-  }
-  if (filters.maxScore) {
-    query = query.lte('lead_score', parseInt(filters.maxScore))
-  }
+  if (filters.search_id) query = query.eq('search_id', filters.search_id)
+  if (filters.category) query = query.ilike('category', `%${filters.category}%`)
+  if (filters.city) query = query.ilike('city', `%${filters.city}%`)
+  if (filters.status) query = query.eq('outreach_status', filters.status)
+  if (filters.minScore) query = query.gte('lead_score', parseInt(filters.minScore))
+  if (filters.maxScore) query = query.lte('lead_score', parseInt(filters.maxScore))
 
-  const { data } = await query.limit(200)
-  return (data as Business[]) ?? []
+  const { data, count } = await query
+  return { leads: (data as Business[]) ?? [], total: count ?? 0 }
 }
 
 export default async function LeadsPage({ searchParams }: LeadsPageProps) {
@@ -58,7 +56,9 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
 
   if (!session) return null
 
-  const leads = await getLeads(session.user.id, searchParams)
+  const page = Math.max(1, parseInt(searchParams.page ?? '1'))
+  const { leads, total } = await getLeads(session.user.id, searchParams)
+  const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
     <div className="space-y-6">
@@ -66,7 +66,7 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Leads</h1>
           <p className="text-muted-foreground mt-1">
-            {leads.length} businesses found
+            {total} businesses found
           </p>
         </div>
         <Button asChild>
@@ -90,7 +90,44 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
             </Button>
           </div>
         ) : (
-          <LeadsTable leads={leads} />
+          <>
+            <LeadsTable leads={leads} />
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-sm text-muted-foreground">
+                  Page {page} of {totalPages} · {total} total leads
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    disabled={page <= 1}
+                  >
+                    <Link
+                      href={`/leads?${new URLSearchParams({ ...searchParams, page: String(page - 1) }).toString()}`}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    disabled={page >= totalPages}
+                  >
+                    <Link
+                      href={`/leads?${new URLSearchParams({ ...searchParams, page: String(page + 1) }).toString()}`}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </Suspense>
     </div>

@@ -155,12 +155,36 @@ export default async function DashboardPage() {
         </CardHeader>
         <CardContent>
           {recentSearches.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Search className="h-12 w-12 mx-auto mb-4 opacity-30" />
-              <p>No searches yet. Start by searching for local businesses.</p>
-              <Button asChild className="mt-4">
-                <Link href="/search">Run your first search</Link>
-              </Button>
+            <div className="text-center py-12 text-muted-foreground">
+              <div className="bg-primary/5 rounded-full p-4 w-fit mx-auto mb-4">
+                <Search className="h-10 w-10 text-primary opacity-60" />
+              </div>
+              <p className="text-base font-medium text-foreground mb-1">No searches yet</p>
+              <p className="text-sm mb-6 max-w-xs mx-auto">
+                Search for local businesses by category and location. We&apos;ll score, analyze, and prep outreach for every lead.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button asChild size="lg">
+                  <Link href="/search">
+                    <Search className="h-4 w-4 mr-2" />
+                    Run Your First Search
+                  </Link>
+                </Button>
+              </div>
+              <div className="mt-8 grid grid-cols-3 gap-4 text-center max-w-sm mx-auto">
+                {[
+                  { step: '1', label: 'Search a category + city' },
+                  { step: '2', label: 'Review AI-scored leads' },
+                  { step: '3', label: 'Send personalized outreach' },
+                ].map(({ step, label }) => (
+                  <div key={step} className="space-y-1">
+                    <div className="h-7 w-7 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mx-auto">
+                      {step}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="space-y-3">

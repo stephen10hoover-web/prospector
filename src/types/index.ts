@@ -18,6 +18,8 @@ export interface Business {
   state: string
   phone: string | null
   email: string | null
+  email_source: 'hunter' | 'pattern' | 'manual' | null
+  email_confidence: number | null
   website_url: string | null
   google_maps_url: string | null
   review_count: number
@@ -39,7 +41,20 @@ export interface Search {
   location: string
   radius: number
   result_count: number
+  status: 'processing' | 'completed' | 'failed'
   created_at: string
+}
+
+export interface Subscription {
+  plan: 'free' | 'pro'
+  status: 'active' | 'past_due' | 'canceled' | 'trialing'
+  current_period_end: string | null
+  stripe_customer_id: string | null
+}
+
+export interface UsageStats {
+  searches_count: number
+  emails_sent_count: number
 }
 
 export interface OutreachLog {

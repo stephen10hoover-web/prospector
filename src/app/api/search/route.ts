@@ -1,9 +1,15 @@
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
+import { waitUntil } from '@vercel/functions'
+import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { searchBusinesses } from '@/lib/business-discovery'
 import { analyzeWebsite } from '@/lib/website-analyzer'
 import { calculateLeadScore } from '@/lib/scoring'
+import { qualifyLead } from '@/lib/claude'
+import { findBusinessEmail } from '@/lib/email-finder'
+import { checkSearchLimit, incrementUsage } from '@/lib/usage'
 import { z } from 'zod'
 
 const searchSchema = z.object({
@@ -32,18 +38,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Usage gate
+    const limitCheck = await checkSearchLimit(session.user.id)
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { error: limitCheck.message, upgrade: true, current: limitCheck.current, limit: limitCheck.limit },
+        { status: 402 }
+      )
+    }
+
     const { category, location, radius } = parsed.data
+    const adminClient = createAdminClient()
 
-    const rawBusinesses = await searchBusinesses({ category, location, radius })
-
-    const { data: search, error: searchError } = await supabase
+    // Create search record immediately and return — process in background
+    const { data: search, error: searchError } = await adminClient
       .from('searches')
       .insert({
         user_id: session.user.id,
         category,
         location,
         radius,
-        result_count: rawBusinesses.length,
+        result_count: 0,
+        status: 'processing',
       })
       .select()
       .single()
@@ -52,25 +68,67 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create search record' }, { status: 500 })
     }
 
-    const enrichedBusinesses = await Promise.all(
+    // Increment usage count immediately (reserve the slot)
+    await incrementUsage(session.user.id, 'searches_count')
+
+    // Process in background — response returns immediately
+    waitUntil(processSearch(search.id, session.user.id, { category, location, radius }))
+
+    return NextResponse.json({ searchId: search.id, status: 'processing' })
+  } catch (error) {
+    console.error('Search route error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+async function processSearch(
+  searchId: string,
+  userId: string,
+  params: { category: string; location: string; radius: number }
+) {
+  const adminClient = createAdminClient()
+
+  try {
+    const rawBusinesses = await searchBusinesses(params)
+
+    const enriched = await Promise.all(
       rawBusinesses.map(async (biz) => {
-        const websiteAnalysis = await analyzeWebsite(biz.website_url)
+        const [websiteAnalysis, emailResult] = await Promise.all([
+          analyzeWebsite(biz.website_url),
+          findBusinessEmail(biz.website_url),
+        ])
+
         const leadScore = calculateLeadScore({
           ...biz,
           has_website: websiteAnalysis.hasWebsite,
           website_quality_score: websiteAnalysis.qualityScore,
         })
 
+        // Non-blocking AI qualification — run independently per lead
+        let aiReasoning: string | null = null
+        try {
+          const qualification = await qualifyLead({
+            ...biz,
+            has_website: websiteAnalysis.hasWebsite,
+            website_quality_score: websiteAnalysis.qualityScore,
+          })
+          aiReasoning = qualification.reasoning
+        } catch {
+          // AI qualification failure never blocks the pipeline
+        }
+
         return {
-          search_id: search.id,
-          user_id: session.user.id,
+          search_id: searchId,
+          user_id: userId,
           name: biz.name,
           category: biz.category,
           address: biz.address,
           city: biz.city,
           state: biz.state,
           phone: biz.phone,
-          email: null,
+          email: emailResult?.email ?? null,
+          email_source: emailResult?.source ?? null,
+          email_confidence: emailResult?.confidence ?? null,
           website_url: biz.website_url,
           google_maps_url: biz.google_maps_url,
           review_count: biz.review_count,
@@ -80,31 +138,39 @@ export async function POST(request: NextRequest) {
           website_issues: websiteAnalysis.issues,
           lead_score: leadScore,
           outreach_status: 'not_contacted',
-          ai_score_reasoning: null,
+          ai_score_reasoning: aiReasoning,
         }
       })
     )
 
-    const { data: businesses, error: bizError } = await supabase
+    // Insert with dedup — skip rows that violate the unique constraint (user_id, name, city, state)
+    const { data: inserted, error: insertError } = await adminClient
       .from('businesses')
-      .insert(enrichedBusinesses)
-      .select()
+      .upsert(enriched, { onConflict: 'user_id,name,city,state', ignoreDuplicates: true })
+      .select('id')
 
-    if (bizError) {
-      return NextResponse.json({ error: 'Failed to save businesses' }, { status: 500 })
+    let finalCount = 0
+    if (insertError) {
+      // If bulk upsert fails for any reason, insert individually
+      let count = 0
+      for (const biz of enriched) {
+        const { error } = await adminClient.from('businesses').insert(biz)
+        if (!error) count++
+      }
+      finalCount = count
+    } else {
+      finalCount = inserted?.length ?? enriched.length
     }
 
-    await supabase
+    await adminClient
       .from('searches')
-      .update({ result_count: businesses?.length ?? 0 })
-      .eq('id', search.id)
-
-    return NextResponse.json({
-      searchId: search.id,
-      businesses: businesses ?? [],
-    })
+      .update({ status: 'completed', result_count: finalCount })
+      .eq('id', searchId)
   } catch (error) {
-    console.error('Search error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('Background search processing error:', error)
+    await adminClient
+      .from('searches')
+      .update({ status: 'failed' })
+      .eq('id', searchId)
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
-import { Search, Loader2 } from 'lucide-react'
+import { Search, Loader2, Zap } from 'lucide-react'
 
 const CATEGORY_SUGGESTIONS = [
   'Roofers',
@@ -41,21 +41,77 @@ const RADIUS_OPTIONS = [
   { value: '50', label: '50 miles' },
 ]
 
-const STATUS_MESSAGES = [
-  'Searching for businesses...',
-  'Analyzing websites...',
-  'Scoring leads...',
-  'Saving results...',
-]
+type SearchPhase = 'idle' | 'submitting' | 'searching' | 'analyzing' | 'scoring' | 'done' | 'failed'
+
+const PHASE_MESSAGES: Record<SearchPhase, string> = {
+  idle: '',
+  submitting: 'Starting search...',
+  searching: 'Searching Google Maps for businesses...',
+  analyzing: 'Analyzing websites and scoring leads...',
+  scoring: 'Running AI qualification...',
+  done: 'Done! Redirecting...',
+  failed: 'Search failed. Please try again.',
+}
+
+const PHASE_PROGRESS: Record<SearchPhase, number> = {
+  idle: 0,
+  submitting: 10,
+  searching: 30,
+  analyzing: 60,
+  scoring: 85,
+  done: 100,
+  failed: 0,
+}
 
 export function SearchForm() {
   const router = useRouter()
   const [category, setCategory] = useState('')
   const [location, setLocation] = useState('')
   const [radius, setRadius] = useState('20')
-  const [loading, setLoading] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [statusMessage, setStatusMessage] = useState('')
+  const [phase, setPhase] = useState<SearchPhase>('idle')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const startTimeRef = useRef<number>(0)
+
+  const loading = phase !== 'idle' && phase !== 'failed'
+
+  function stopPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  async function pollStatus(searchId: string) {
+    const elapsed = Date.now() - startTimeRef.current
+    // Advance phase based on time elapsed (gives visual feedback while waiting)
+    if (elapsed < 5000) {
+      setPhase('searching')
+    } else if (elapsed < 20000) {
+      setPhase('analyzing')
+    } else {
+      setPhase('scoring')
+    }
+
+    try {
+      const res = await fetch(`/api/search/${searchId}/status`)
+      if (!res.ok) return
+
+      const data = await res.json()
+
+      if (data.status === 'completed') {
+        stopPolling()
+        setPhase('done')
+        toast.success(`Found ${data.result_count} businesses!`)
+        setTimeout(() => router.push(`/leads?search_id=${searchId}`), 500)
+      } else if (data.status === 'failed') {
+        stopPolling()
+        setPhase('failed')
+        toast.error('Search failed. Please try again.')
+      }
+    } catch {
+      // Polling errors are non-fatal — keep trying
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -64,22 +120,8 @@ export function SearchForm() {
       return
     }
 
-    setLoading(true)
-    setProgress(10)
-    setStatusMessage(STATUS_MESSAGES[0])
-
-    const progressInterval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 85) {
-          clearInterval(progressInterval)
-          return 85
-        }
-        const next = prev + 15
-        const msgIndex = Math.min(Math.floor(next / 25), STATUS_MESSAGES.length - 1)
-        setStatusMessage(STATUS_MESSAGES[msgIndex])
-        return next
-      })
-    }, 1200)
+    setPhase('submitting')
+    startTimeRef.current = Date.now()
 
     try {
       const res = await fetch('/api/search', {
@@ -92,30 +134,34 @@ export function SearchForm() {
         }),
       })
 
-      clearInterval(progressInterval)
-
       if (!res.ok) {
         const err = await res.json()
-        throw new Error(err.error ?? 'Search failed')
+        if (err.upgrade) {
+          toast.error(err.error ?? 'Monthly limit reached. Upgrade to Pro.')
+        } else {
+          throw new Error(err.error ?? 'Search failed')
+        }
+        setPhase('idle')
+        return
       }
 
-      const data = await res.json()
-      setProgress(100)
-      setStatusMessage('Done!')
-      toast.success(`Found ${data.businesses?.length ?? 0} businesses!`)
+      const { searchId } = await res.json()
+      setPhase('searching')
 
-      setTimeout(() => {
-        router.push(`/leads?search_id=${data.searchId}`)
-      }, 500)
+      // Start polling every 2 seconds
+      pollRef.current = setInterval(() => pollStatus(searchId), 2000)
+      // Also poll immediately
+      await pollStatus(searchId)
     } catch (error) {
-      clearInterval(progressInterval)
+      stopPolling()
+      setPhase('failed')
       toast.error(error instanceof Error ? error.message : 'Search failed')
-    } finally {
-      setLoading(false)
-      setProgress(0)
-      setStatusMessage('')
+      setTimeout(() => setPhase('idle'), 2000)
     }
   }
+
+  const progress = PHASE_PROGRESS[phase]
+  const statusMessage = PHASE_MESSAGES[phase]
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -140,7 +186,8 @@ export function SearchForm() {
               key={s}
               type="button"
               onClick={() => setCategory(s)}
-              className="text-xs px-2 py-1 rounded-full border bg-muted hover:bg-accent transition-colors"
+              disabled={loading}
+              className="text-xs px-2 py-1 rounded-full border bg-muted hover:bg-accent transition-colors disabled:opacity-50"
             >
               {s}
             </button>
@@ -186,7 +233,7 @@ export function SearchForm() {
         {loading ? (
           <>
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Searching...
+            {phase === 'submitting' ? 'Starting...' : 'Searching...'}
           </>
         ) : (
           <>
@@ -195,6 +242,13 @@ export function SearchForm() {
           </>
         )}
       </Button>
+
+      {!loading && (
+        <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+          <Zap className="h-3 w-3" />
+          Results include AI scoring, website analysis, and email discovery
+        </p>
+      )}
     </form>
   )
 }
