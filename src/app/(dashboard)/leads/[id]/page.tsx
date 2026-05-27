@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase-server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -50,7 +50,7 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
     data: { session },
   } = await supabase.auth.getSession()
 
-  if (!session) return null
+  if (!session) redirect('/login')
 
   const { data: business } = await supabase
     .from('businesses')

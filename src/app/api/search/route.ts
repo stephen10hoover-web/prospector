@@ -6,6 +6,8 @@ import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { searchBusinesses } from '@/lib/business-discovery'
 import { analyzeWebsite } from '@/lib/website-analyzer'
 import { calculateLeadScore } from '@/lib/scoring'
+import { atomicCheckAndIncrement } from '@/lib/usage'
+import { FREE_LIMITS } from '@/lib/stripe'
 import { z } from 'zod'
 
 const searchSchema = z.object({
@@ -27,6 +29,19 @@ export async function POST(request: NextRequest) {
     const parsed = searchSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+    }
+
+    // Rate limit check — atomic to prevent TOCTOU races
+    const limitResult = await atomicCheckAndIncrement(
+      session.user.id,
+      'searches_count',
+      FREE_LIMITS.searches
+    )
+    if (!limitResult.allowed) {
+      return NextResponse.json(
+        { error: 'Monthly search limit reached. Upgrade to Pro for unlimited searches.' },
+        { status: 402 }
+      )
     }
 
     const { category, location, radius } = parsed.data

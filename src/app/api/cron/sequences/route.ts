@@ -1,11 +1,12 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase-server'
 import { processSequences } from '@/lib/sequences'
 
 // Called by Vercel Cron — verify via CRON_SECRET header
 export async function GET(request: NextRequest) {
   const secret = request.headers.get('authorization')?.replace('Bearer ', '')
-  if (secret !== process.env.CRON_SECRET) {
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -13,11 +14,15 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ ok: true, ...result })
 }
 
-// Also allow authenticated manual trigger (for dashboard background processing)
+// Manual trigger — requires authenticated session, scoped to that user only
 export async function POST(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const userId = searchParams.get('userId')
+  const supabase = createServerClient()
+  const { data: { session } } = await supabase.auth.getSession()
 
-  const result = await processSequences(userId ?? undefined)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const result = await processSequences(session.user.id)
   return NextResponse.json({ ok: true, ...result })
 }

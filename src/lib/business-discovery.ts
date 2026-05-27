@@ -96,9 +96,6 @@ export async function searchBusinesses(params: {
   const { category, location, radius } = params
   const apiKey = process.env.SERP_API_KEY
 
-  console.log('[business-discovery] SERP_API_KEY present:', !!apiKey)
-  console.log('[business-discovery] Key prefix:', apiKey?.slice(0, 5))
-
   if (!apiKey) {
     console.warn('[business-discovery] SERP_API_KEY not set. Using mock data.')
     return MOCK_BUSINESSES.map((biz) => ({

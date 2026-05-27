@@ -64,9 +64,9 @@ export async function atomicCheckAndIncrement(
   })
 
   if (error) {
-    // On DB error, fail open for UX (don't block the user) but log it
+    // Fail closed — never allow paid API calls through on DB error
     console.error('[usage] check_and_increment_usage failed:', error.message)
-    return { allowed: true }
+    return { allowed: false }
   }
 
   return { allowed: data === true }
