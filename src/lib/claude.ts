@@ -74,44 +74,39 @@ Write a personalized email that addresses their specific situation. Return only 
         cache_control: { type: 'ephemeral' },
       },
     ],
-    messages: [
+    tools: [
       {
-        role: 'user',
-        content: userMessage,
+        name: 'write_outreach_email',
+        description: 'Write a personalized cold outreach email for a local business',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            subject: { type: 'string', description: 'Email subject line' },
+            body: { type: 'string', description: 'Full email body text' },
+            talkingPoints: {
+              type: 'array',
+              items: { type: 'string' },
+              description: '3 key talking points about why this business is a good opportunity',
+            },
+          },
+          required: ['subject', 'body', 'talkingPoints'],
+        },
       },
     ],
+    tool_choice: { type: 'tool', name: 'write_outreach_email' },
+    messages: [{ role: 'user', content: userMessage }],
   })
 
-  const textContent = response.content.find((c) => c.type === 'text')
-  if (!textContent || textContent.type !== 'text') {
-    throw new Error('No text content in Claude response')
+  const toolUse = response.content.find((c) => c.type === 'tool_use')
+  if (!toolUse || toolUse.type !== 'tool_use') {
+    throw new Error('No tool use in Claude response')
   }
 
-  try {
-    // Strip markdown code fences if present
-    let raw = textContent.text.trim()
-    raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-
-    // Extract the outermost JSON object
-    const start = raw.indexOf('{')
-    const end = raw.lastIndexOf('}')
-    if (start === -1 || end === -1) throw new Error('No JSON found in response')
-    const parsed = JSON.parse(raw.slice(start, end + 1)) as OutreachEmail
-
-    if (!parsed.subject || !parsed.body) throw new Error('Missing required fields')
-
-    return {
-      subject: String(parsed.subject),
-      body: String(parsed.body),
-      talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints.map(String) : [],
-    }
-  } catch {
-    // Last resort — return whatever text Claude gave us as the body
-    return {
-      subject: 'Quick question about your online presence',
-      body: textContent.text,
-      talkingPoints: [],
-    }
+  const input = toolUse.input as { subject: string; body: string; talkingPoints: string[] }
+  return {
+    subject: input.subject,
+    body: input.body,
+    talkingPoints: Array.isArray(input.talkingPoints) ? input.talkingPoints : [],
   }
 }
 
