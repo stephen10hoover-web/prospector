@@ -8,8 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
-import { Loader2, Zap, CreditCard, BarChart2, CheckCircle } from 'lucide-react'
+import { Loader2, Zap, CreditCard, BarChart2, CheckCircle, Palette } from 'lucide-react'
 import { FREE_LIMITS } from '@/lib/stripe'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 interface BillingData {
   plan: 'free' | 'pro'
@@ -174,6 +175,20 @@ export default function SettingsPage() {
               </Button>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Appearance Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Palette className="h-5 w-5" />
+            Appearance
+          </CardTitle>
+          <CardDescription>Choose your preferred color theme</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ThemeToggle />
         </CardContent>
       </Card>
 
