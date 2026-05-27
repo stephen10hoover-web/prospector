@@ -29,19 +29,27 @@ export async function generateAuditReport(businessId: string, userId: string): P
 
   const client = new Anthropic()
 
+  function sp(val: string | null | undefined, max = 200): string {
+    if (!val) return 'N/A'
+    return val.replace(/[\x00-\x1F\x7F]/g, ' ').slice(0, max).trim()
+  }
+
+  const issues = (biz.website_issues ?? [])
+    .slice(0, 10)
+    .map((i: string) => sp(i, 150))
+    .join(', ') || 'None'
+
   const prompt = `You are a professional web presence analyst. Generate a detailed audit report for this local business.
 
 Business Details:
-- Name: ${biz.name}
-- Category: ${biz.category}
-- Location: ${biz.city}, ${biz.state}
+- Name: ${sp(biz.name, 100)}
+- Category: ${sp(biz.category, 80)}
+- Location: ${sp(biz.city, 80)}, ${sp(biz.state, 50)}
 - Has Website: ${biz.has_website ? 'Yes' : 'No'}
-- Website URL: ${biz.website_url ?? 'None'}
 - Website Quality Score: ${biz.website_quality_score}/100
-- Issues Found: ${biz.website_issues?.length > 0 ? biz.website_issues.join(', ') : 'None'}
+- Issues Found: ${issues}
 - Google Rating: ${biz.rating} (${biz.review_count} reviews)
 - Lead Score: ${biz.lead_score}/100
-- AI Reasoning: ${biz.ai_score_reasoning ?? 'Not available'}
 
 Return a JSON object (no markdown, just raw JSON) with this exact structure:
 {
@@ -118,7 +126,7 @@ export async function getOrCreateAudit(
 
   const { data: inserted } = await supabase
     .from('audit_reports')
-    .upsert({ business_id: businessId, user_id: userId, content }, { onConflict: 'business_id' })
+    .upsert({ business_id: businessId, user_id: userId, content }, { onConflict: 'business_id,user_id' })
     .select('share_token, generated_at')
     .single()
 

@@ -47,6 +47,21 @@ export async function POST(
 
     const { to, subject, body: emailBody } = parsed.data
 
+    // Check suppression list before sending
+    const adminDb = createAdminClient()
+    const { data: suppressed } = await adminDb
+      .from('email_suppressions')
+      .select('email')
+      .eq('email', to.toLowerCase())
+      .maybeSingle()
+
+    if (suppressed) {
+      return NextResponse.json(
+        { error: 'This email address has unsubscribed and cannot receive emails.' },
+        { status: 422 }
+      )
+    }
+
     const { data: business, error: fetchError } = await supabase
       .from('businesses')
       .select('name')

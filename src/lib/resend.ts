@@ -22,9 +22,10 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 function buildHtmlEmail(params: {
   body: string
   businessName: string
+  recipientEmail: string
   trackingPixelUrl?: string
 }): string {
-  const { body, businessName, trackingPixelUrl } = params
+  const { body, businessName, recipientEmail, trackingPixelUrl } = params
   const bodyHtml = body
     .split('\n')
     .map((line) =>
@@ -57,9 +58,10 @@ function buildHtmlEmail(params: {
           <tr>
             <td style="padding: 20px 40px; border-top: 1px solid #e5e7eb; background: #f9f9f9;">
               <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
-                This email was sent to ${safeBusinessName}.
+                This email was sent to ${safeBusinessName}.<br/>
                 If you'd like to unsubscribe from future emails,
-                <a href="${APP_URL}/unsubscribe" style="color: #6b7280;">click here</a>.
+                <a href="${APP_URL}/unsubscribe?email=${encodeURIComponent(recipientEmail)}" style="color: #6b7280;">click here</a>.<br/>
+                Prospector · 123 Main St, Suite 100 · Austin, TX 78701
               </p>
             </td>
           </tr>
@@ -82,7 +84,7 @@ export async function sendOutreachEmail(params: {
 }): Promise<{ id: string }> {
   const { to, subject, body, businessName, businessId, userId, trackingPixelUrl } = params
 
-  const html = buildHtmlEmail({ body, businessName, trackingPixelUrl })
+  const html = buildHtmlEmail({ body, businessName, recipientEmail: to, trackingPixelUrl })
   const resend = getResendClient()
   const replyTo = `replies+${businessId}x${userId}@prospectorsearches.com`
 

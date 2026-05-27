@@ -2,6 +2,9 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getOrCreateAudit } from '@/lib/audit-generator'
+import { atomicCheckAndIncrement, getUserPlan } from '@/lib/usage'
+
+const FREE_AUDIT_LIMIT = 10
 
 export async function GET(
   _request: NextRequest,
@@ -31,6 +34,20 @@ export async function POST(
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
+    const plan = await getUserPlan(session.user.id)
+    if (plan !== 'pro') {
+      const limitResult = await atomicCheckAndIncrement(
+        session.user.id,
+        'outreach_generated_count',
+        FREE_AUDIT_LIMIT
+      )
+      if (!limitResult.allowed) {
+        return NextResponse.json(
+          { error: 'Monthly audit limit reached. Upgrade to Pro for unlimited audits.' },
+          { status: 402 }
+        )
+      }
+    }
     const result = await getOrCreateAudit(params.id, session.user.id)
     return NextResponse.json(result)
   } catch (err) {

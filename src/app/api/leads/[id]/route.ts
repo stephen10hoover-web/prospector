@@ -31,6 +31,7 @@ export async function GET(
       .from('outreach_logs')
       .select('*')
       .eq('business_id', params.id)
+      .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
 
     return NextResponse.json({
