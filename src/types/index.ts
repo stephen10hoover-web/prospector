@@ -117,3 +117,15 @@ export interface DashboardStats {
   replies: number
   avgLeadScore: number
 }
+
+export interface InboundMessage {
+  id: string
+  business_id: string
+  user_id: string
+  from_email: string
+  from_name: string | null
+  subject: string | null
+  body: string
+  received_at: string
+  read: boolean
+}

@@ -16,25 +16,37 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
-  // Fetch plan non-blocking — default to 'free' on error
+  // Fetch plan and unread count in parallel — both non-blocking
   let plan: 'free' | 'pro' = 'free'
+  let inboxUnread = 0
   try {
     const adminClient = createAdminClient()
-    const { data: sub } = await adminClient
-      .from('subscriptions')
-      .select('plan, status')
-      .eq('user_id', session.user.id)
-      .single()
-    if (sub?.plan === 'pro' && (sub.status === 'active' || sub.status === 'trialing')) {
+    const [subResult, unreadResult] = await Promise.all([
+      adminClient
+        .from('subscriptions')
+        .select('plan, status')
+        .eq('user_id', session.user.id)
+        .single(),
+      adminClient
+        .from('inbound_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', session.user.id)
+        .eq('read', false),
+    ])
+    if (
+      subResult.data?.plan === 'pro' &&
+      (subResult.data.status === 'active' || subResult.data.status === 'trialing')
+    ) {
       plan = 'pro'
     }
+    inboxUnread = unreadResult.count ?? 0
   } catch {
     // Non-fatal
   }
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar userEmail={session.user.email ?? ''} userId={session.user.id} plan={plan} />
+      <Sidebar userEmail={session.user.email ?? ''} userId={session.user.id} plan={plan} inboxUnread={inboxUnread} />
       <main className="flex-1 overflow-y-auto">
         <div className="p-6 lg:p-8">
           {children}

@@ -61,6 +61,8 @@ export async function POST(
       subject,
       body: emailBody,
       businessName: business.name,
+      businessId: params.id,
+      userId: session.user.id,
     })
 
     await supabase.from('outreach_logs').insert({

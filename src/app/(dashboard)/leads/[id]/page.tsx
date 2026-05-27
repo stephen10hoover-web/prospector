@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { OutreachModal } from '@/components/outreach/OutreachModal'
 import { LeadStatusSelect } from '@/components/leads/LeadStatusSelect'
-import type { Business, OutreachLog } from '@/types'
+import { MarkReadOnMount } from '@/components/inbox/MarkReadOnMount'
+import type { Business, OutreachLog, InboundMessage } from '@/types'
 import {
   Globe,
   Phone,
@@ -16,6 +17,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from 'lucide-react'
 
 interface LeadDetailPageProps {
@@ -59,8 +62,29 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
     .eq('business_id', params.id)
     .order('created_at', { ascending: false })
 
+  const { data: inboundMessages } = await supabase
+    .from('inbound_messages')
+    .select('*')
+    .eq('business_id', params.id)
+    .eq('user_id', session.user.id)
+    .order('received_at', { ascending: true })
+
   const biz = business as Business
   const logs = (outreachLogs as OutreachLog[]) ?? []
+  const replies = (inboundMessages as InboundMessage[]) ?? []
+  const unreadCount = replies.filter((r) => !r.read).length
+
+  // Build unified timeline: sent emails + inbound replies, sorted by time
+  type TimelineItem =
+    | { kind: 'sent'; log: OutreachLog }
+    | { kind: 'reply'; msg: InboundMessage }
+
+  const timeline: TimelineItem[] = [
+    ...logs
+      .filter((l) => l.type === 'email' && l.status === 'sent')
+      .map((log) => ({ kind: 'sent' as const, log, time: log.created_at })),
+    ...replies.map((msg) => ({ kind: 'reply' as const, msg, time: msg.received_at })),
+  ].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
 
   const statusColors: Record<string, string> = {
     not_contacted: 'secondary',
@@ -214,50 +238,119 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
         </CardContent>
       </Card>
 
+      {/* Conversation thread */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
-            Outreach History
+            Conversation
+            {unreadCount > 0 && (
+              <Badge className="ml-1 text-xs">{unreadCount} new</Badge>
+            )}
           </CardTitle>
+          <CardDescription>Emails sent and replies received</CardDescription>
         </CardHeader>
         <CardContent>
-          {logs.length === 0 ? (
+          {timeline.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               No outreach activity yet. Generate your first email above.
             </p>
           ) : (
             <div className="space-y-4">
-              {logs.map((log) => (
-                <div key={log.id} className="flex gap-3 pb-4 border-b last:border-0">
-                  <div className="shrink-0 mt-0.5">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
+              {timeline.map((item) => {
+                if (item.kind === 'sent') {
+                  const log = item.log
+                  return (
+                    <div key={log.id} className="flex gap-3 pb-4 border-b last:border-0">
+                      <div className="shrink-0 mt-0.5">
+                        <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
+                          <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium">You sent an email</span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(log.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        {log.subject && (
+                          <p className="text-sm text-muted-foreground">Subject: {log.subject}</p>
+                        )}
+                        {log.sent_to && (
+                          <p className="text-xs text-muted-foreground mt-0.5">To: {log.sent_to}</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                }
+
+                const msg = item.msg
+                return (
+                  <div key={msg.id} className={`flex gap-3 pb-4 border-b last:border-0 ${!msg.read ? 'bg-primary/5 -mx-2 px-2 rounded-lg' : ''}`}>
+                    <div className="shrink-0 mt-0.5">
+                      <div className="h-7 w-7 rounded-full bg-green-100 flex items-center justify-center">
+                        <ArrowDownLeft className="h-3.5 w-3.5 text-green-600" />
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold">
+                            {msg.from_name ?? msg.from_email}
+                          </span>
+                          {!msg.read && <Badge className="text-xs px-1.5 py-0 h-4">New</Badge>}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(msg.received_at).toLocaleString()}
+                        </span>
+                      </div>
+                      {msg.subject && (
+                        <p className="text-xs text-muted-foreground mb-1">Re: {msg.subject}</p>
+                      )}
+                      <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.body}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium capitalize">{log.type.replaceAll('_', ' ')}</span>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={log.status === 'sent' ? 'default' : log.status === 'failed' ? 'destructive' : 'secondary'} className="text-xs">
-                          {log.status}
-                        </Badge>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Outreach history (generated drafts) */}
+      {logs.some((l) => l.type === 'generated') && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Generation History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {logs
+                .filter((l) => l.type === 'generated')
+                .map((log) => (
+                  <div key={log.id} className="flex gap-3 pb-3 border-b last:border-0">
+                    <Clock className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">AI draft generated</span>
                         <span className="text-xs text-muted-foreground">
                           {new Date(log.created_at).toLocaleString()}
                         </span>
                       </div>
                     </div>
-                    {log.subject && (
-                      <p className="text-sm text-muted-foreground truncate">Subject: {log.subject}</p>
-                    )}
-                    {log.sent_to && (
-                      <p className="text-xs text-muted-foreground">Sent to: {log.sent_to}</p>
-                    )}
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mark replies as read when page is opened */}
+      {unreadCount > 0 && <MarkReadOnMount businessId={biz.id} />}
     </div>
   )
 }

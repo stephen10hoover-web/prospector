@@ -71,15 +71,19 @@ export async function sendOutreachEmail(params: {
   subject: string
   body: string
   businessName: string
+  businessId: string
+  userId: string
 }): Promise<{ id: string }> {
-  const { to, subject, body, businessName } = params
+  const { to, subject, body, businessName, businessId, userId } = params
 
   const html = buildHtmlEmail({ body, businessName })
   const resend = getResendClient()
+  const replyTo = `replies+${businessId}x${userId}@prospectorsearches.com`
 
   const { data, error } = await resend.emails.send({
     from: FROM_EMAIL,
     to: [to],
+    replyTo: replyTo,
     subject,
     html,
     text: body,
