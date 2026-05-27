@@ -118,6 +118,35 @@ export interface DashboardStats {
   avgLeadScore: number
 }
 
+export interface Sequence {
+  id: string
+  user_id: string
+  name: string
+  description: string | null
+  created_at: string
+}
+
+export interface SequenceStep {
+  id: string
+  sequence_id: string
+  step_number: number
+  delay_days: number
+  subject: string
+  body: string
+}
+
+export interface SequenceEnrollment {
+  id: string
+  sequence_id: string
+  business_id: string
+  user_id: string
+  current_step: number
+  status: 'active' | 'paused' | 'completed' | 'replied' | 'bounced' | 'cancelled'
+  enrolled_at: string
+  next_send_at: string
+  completed_at: string | null
+}
+
 export interface InboundMessage {
   id: string
   business_id: string

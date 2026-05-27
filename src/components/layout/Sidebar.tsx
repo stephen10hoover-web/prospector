@@ -19,6 +19,9 @@ import {
   ChevronRight,
   Settings,
   Inbox,
+  Kanban,
+  Zap,
+  BarChart3,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -45,9 +48,24 @@ const navItems = [
     icon: Users,
   },
   {
+    label: 'Pipeline',
+    href: '/pipeline',
+    icon: Kanban,
+  },
+  {
+    label: 'Sequences',
+    href: '/sequences',
+    icon: Zap,
+  },
+  {
     label: 'Inbox',
     href: '/inbox',
     icon: Inbox,
+  },
+  {
+    label: 'Analytics',
+    href: '/analytics',
+    icon: BarChart3,
   },
   {
     label: 'Settings',

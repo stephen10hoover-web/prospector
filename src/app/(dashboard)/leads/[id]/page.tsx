@@ -6,6 +6,8 @@ import { Separator } from '@/components/ui/separator'
 import { OutreachModal } from '@/components/outreach/OutreachModal'
 import { LeadStatusSelect } from '@/components/leads/LeadStatusSelect'
 import { MarkReadOnMount } from '@/components/inbox/MarkReadOnMount'
+import { EnrollModal } from '@/components/sequences/EnrollModal'
+import { SpamScoreWidget } from '@/components/sequences/SpamScoreWidget'
 import type { Business, OutreachLog, InboundMessage } from '@/types'
 import {
   Globe,
@@ -234,7 +236,10 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
               <LeadStatusSelect businessId={biz.id} currentStatus={biz.outreach_status} />
             </div>
           </div>
-          <OutreachModal business={biz} />
+          <div className="flex items-center gap-3 flex-wrap">
+            <OutreachModal business={biz} />
+            <EnrollModal businessId={biz.id} businessName={biz.name} />
+          </div>
         </CardContent>
       </Card>
 

@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Mail, RefreshCw, Send, Sparkles } from 'lucide-react'
+import { SpamScoreWidget } from '@/components/sequences/SpamScoreWidget'
 
 interface OutreachModalProps {
   business: Business
@@ -201,6 +202,10 @@ export function OutreachModal({ business, defaultOpen = false, onClose }: Outrea
                   />
                 </div>
               </div>
+
+              {subject || body ? (
+                <SpamScoreWidget subject={subject} body={body} />
+              ) : null}
 
               <div className="flex items-center justify-between pt-2">
                 <Button
