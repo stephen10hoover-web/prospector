@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { SequenceProcessor } from '@/components/layout/SequenceProcessor'
 
 export default async function DashboardLayout({
   children,
@@ -52,6 +53,7 @@ export default async function DashboardLayout({
           {children}
         </div>
       </main>
+      <SequenceProcessor userId={session.user.id} />
     </div>
   )
 }

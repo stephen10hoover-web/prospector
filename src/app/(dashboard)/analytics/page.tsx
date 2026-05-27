@@ -1,7 +1,7 @@
 import { createServerClient } from '@/lib/supabase-server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { TrendingUp, Mail, MessageSquare, Users, Zap } from 'lucide-react'
+import { TrendingUp, Mail, MessageSquare, Users, Zap, Eye } from 'lucide-react'
 
 function BarChart({ data, maxVal }: { data: { label: string; value: number }[]; maxVal: number }) {
   return (
@@ -73,6 +73,7 @@ export default async function AnalyticsPage() {
     { data: inbound },
     { data: businesses },
     { data: enrollments },
+    { data: openedLogs },
   ] = await Promise.all([
     supabase
       .from('outreach_logs')
@@ -94,6 +95,14 @@ export default async function AnalyticsPage() {
       .from('sequence_enrollments')
       .select('status')
       .eq('user_id', session.user.id),
+    supabase
+      .from('outreach_logs')
+      .select('id')
+      .eq('user_id', session.user.id)
+      .eq('type', 'email')
+      .eq('status', 'sent')
+      .gt('open_count', 0)
+      .gte('created_at', eightWeeksAgo.toISOString()),
   ])
 
   // --- Weekly buckets ---
@@ -148,7 +157,9 @@ export default async function AnalyticsPage() {
   // --- Summary stats ---
   const totalSent = (sentLogs ?? []).length
   const totalReplies = (inbound ?? []).length
+  const totalOpened = (openedLogs ?? []).length
   const replyRate = totalSent > 0 ? Math.round((totalReplies / totalSent) * 100) : 0
+  const openRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0
   const activeSequences = (enrollments ?? []).filter((e) => e.status === 'active').length
   const closedWon = pipelineMap['closed_won'] ?? 0
 
@@ -159,13 +170,20 @@ export default async function AnalyticsPage() {
         <p className="text-muted-foreground mt-1">Performance over the last 8 weeks</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           title="Emails Sent"
           value={totalSent}
           sub="Last 8 weeks"
           icon={Mail}
           color="bg-blue-50 text-blue-600"
+        />
+        <StatCard
+          title="Opens"
+          value={totalOpened}
+          sub={`${openRate}% open rate`}
+          icon={Eye}
+          color="bg-sky-50 text-sky-600"
         />
         <StatCard
           title="Replies"

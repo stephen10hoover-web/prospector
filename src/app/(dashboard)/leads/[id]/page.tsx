@@ -8,7 +8,9 @@ import { LeadStatusSelect } from '@/components/leads/LeadStatusSelect'
 import { MarkReadOnMount } from '@/components/inbox/MarkReadOnMount'
 import { EnrollModal } from '@/components/sequences/EnrollModal'
 import { SpamScoreWidget } from '@/components/sequences/SpamScoreWidget'
-import type { Business, OutreachLog, InboundMessage } from '@/types'
+import { AuditButton } from '@/components/audit/AuditButton'
+import type { Business, OutreachLog, InboundMessage, AuditReport } from '@/types'
+import { createAdminClient } from '@/lib/supabase-server'
 import {
   Globe,
   Phone,
@@ -21,6 +23,7 @@ import {
   Clock,
   ArrowDownLeft,
   ArrowUpRight,
+  Eye,
 } from 'lucide-react'
 
 interface LeadDetailPageProps {
@@ -70,6 +73,14 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
     .eq('business_id', params.id)
     .eq('user_id', session.user.id)
     .order('received_at', { ascending: true })
+
+  const admin = createAdminClient()
+  const { data: existingAudit } = await admin
+    .from('audit_reports')
+    .select('share_token')
+    .eq('business_id', params.id)
+    .eq('user_id', session.user.id)
+    .maybeSingle()
 
   const biz = business as Business
   const logs = (outreachLogs as OutreachLog[]) ?? []
@@ -239,6 +250,7 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
           <div className="flex items-center gap-3 flex-wrap">
             <OutreachModal business={biz} />
             <EnrollModal businessId={biz.id} businessName={biz.name} />
+            <AuditButton businessId={biz.id} existingToken={existingAudit?.share_token ?? null} />
           </div>
         </CardContent>
       </Card>
@@ -284,6 +296,13 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
                         )}
                         {log.sent_to && (
                           <p className="text-xs text-muted-foreground mt-0.5">To: {log.sent_to}</p>
+                        )}
+                        {(log.open_count ?? 0) > 0 && (
+                          <p className="text-xs text-green-600 mt-0.5 flex items-center gap-1">
+                            <Eye className="h-3 w-3" />
+                            Opened {log.open_count} time{log.open_count === 1 ? '' : 's'}
+                            {log.first_opened_at ? ` · first ${new Date(log.first_opened_at).toLocaleDateString()}` : ''}
+                          </p>
                         )}
                       </div>
                     </div>

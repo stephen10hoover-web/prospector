@@ -1,5 +1,6 @@
 import { createAdminClient } from './supabase-server'
 import { sendOutreachEmail } from './resend'
+import { createTrackingToken, buildTrackingPixelUrl } from './email-tracking'
 
 const BATCH_SIZE = 50
 
@@ -108,6 +109,32 @@ async function processEnrollment(
   const subject = substituteVars(step.subject as string, business)
   const body = substituteVars(step.body as string, business)
 
+  // Pre-insert outreach_log to get ID for tracking token
+  const { data: logRow } = await supabase
+    .from('outreach_logs')
+    .insert({
+      business_id: businessId,
+      user_id: userId,
+      type: 'email',
+      subject,
+      body,
+      sent_to: business.email,
+      status: 'sent',
+    })
+    .select('id')
+    .single()
+
+  // Create tracking token linked to the log
+  const token = logRow
+    ? await createTrackingToken({
+        outreachLogId: logRow.id,
+        businessId: business.id,
+        userId,
+        enrollmentId,
+        stepNumber: currentStep,
+      })
+    : null
+
   // Send
   await sendOutreachEmail({
     to: business.email,
@@ -116,6 +143,7 @@ async function processEnrollment(
     businessName: business.name,
     businessId: business.id,
     userId,
+    trackingPixelUrl: token ? buildTrackingPixelUrl(token) : undefined,
   })
 
   // Record send (unique constraint prevents duplicates)
@@ -124,17 +152,6 @@ async function processEnrollment(
     step_number: currentStep,
     to_email: business.email,
     subject,
-  })
-
-  // Record in outreach_logs for full history
-  await supabase.from('outreach_logs').insert({
-    business_id: businessId,
-    user_id: userId,
-    type: 'email',
-    subject,
-    body,
-    sent_to: business.email,
-    status: 'sent',
   })
 
   await advanceEnrollment(enrollmentId, currentStep, sequenceId, supabase)

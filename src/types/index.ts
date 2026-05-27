@@ -66,7 +66,29 @@ export interface OutreachLog {
   body: string | null
   sent_to: string | null
   status: 'generated' | 'sent' | 'failed'
+  open_count: number
+  first_opened_at: string | null
   created_at: string
+}
+
+export interface AuditSection {
+  title: string
+  score: number
+  status: 'good' | 'warning' | 'critical'
+  findings: string[]
+}
+
+export interface AuditContent {
+  overview: string
+  overallScore: number
+  sections: AuditSection[]
+  recommendations: string[]
+}
+
+export interface AuditReport {
+  content: AuditContent
+  share_token: string
+  generated_at: string
 }
 
 export interface AiGeneration {
