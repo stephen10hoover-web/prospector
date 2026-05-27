@@ -61,7 +61,7 @@ function buildHtmlEmail(params: {
                 This email was sent to ${safeBusinessName}.<br/>
                 If you'd like to unsubscribe from future emails,
                 <a href="${APP_URL}/unsubscribe?email=${encodeURIComponent(recipientEmail)}" style="color: #6b7280;">click here</a>.<br/>
-                Prospector · 123 Main St, Suite 100 · Austin, TX 78701
+                ${process.env.COMPANY_ADDRESS ?? 'Prospector · PO Box 1234 · Austin, TX 78701'}
               </p>
             </td>
           </tr>

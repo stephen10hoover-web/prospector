@@ -1,16 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-export default function UnsubscribePage() {
+function UnsubscribeContent() {
   const searchParams = useSearchParams()
   const email = searchParams.get('email') ?? ''
-  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [status, setStatus] = useState<'loading' | 'done' | 'error' | 'invalid'>('loading')
 
   useEffect(() => {
-    if (!email) return
-    setStatus('loading')
+    if (!email) { setStatus('invalid'); return }
     fetch('/api/unsubscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -23,7 +22,7 @@ export default function UnsubscribePage() {
   return (
     <div style={{ fontFamily: 'sans-serif', maxWidth: 480, margin: '80px auto', padding: '0 24px', textAlign: 'center' }}>
       <h1 style={{ fontSize: 24, marginBottom: 16 }}>Unsubscribe</h1>
-      {!email && <p>Invalid unsubscribe link.</p>}
+      {status === 'invalid' && <p>Invalid unsubscribe link.</p>}
       {status === 'loading' && <p>Processing your request...</p>}
       {status === 'done' && (
         <p style={{ color: '#16a34a' }}>
@@ -34,5 +33,13 @@ export default function UnsubscribePage() {
         <p style={{ color: '#dc2626' }}>Something went wrong. Please try again or reply to the email with &quot;unsubscribe&quot;.</p>
       )}
     </div>
+  )
+}
+
+export default function UnsubscribePage() {
+  return (
+    <Suspense fallback={<div style={{ fontFamily: 'sans-serif', maxWidth: 480, margin: '80px auto', padding: '0 24px', textAlign: 'center' }}>Processing...</div>}>
+      <UnsubscribeContent />
+    </Suspense>
   )
 }
