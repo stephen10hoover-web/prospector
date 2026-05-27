@@ -22,8 +22,9 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 function buildHtmlEmail(params: {
   body: string
   businessName: string
+  trackingPixelUrl?: string
 }): string {
-  const { body, businessName } = params
+  const { body, businessName, trackingPixelUrl } = params
   const bodyHtml = body
     .split('\n')
     .map((line) =>
@@ -31,6 +32,9 @@ function buildHtmlEmail(params: {
     )
     .join('')
   const safeBusinessName = escapeHtml(businessName)
+  const trackingPixel = trackingPixelUrl
+    ? `<img src="${trackingPixelUrl}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;opacity:0;" />`
+    : ''
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -47,6 +51,7 @@ function buildHtmlEmail(params: {
           <tr>
             <td style="padding: 40px;">
               ${bodyHtml}
+              ${trackingPixel}
             </td>
           </tr>
           <tr>
@@ -71,15 +76,20 @@ export async function sendOutreachEmail(params: {
   subject: string
   body: string
   businessName: string
+  businessId: string
+  userId: string
+  trackingPixelUrl?: string
 }): Promise<{ id: string }> {
-  const { to, subject, body, businessName } = params
+  const { to, subject, body, businessName, businessId, userId, trackingPixelUrl } = params
 
-  const html = buildHtmlEmail({ body, businessName })
+  const html = buildHtmlEmail({ body, businessName, trackingPixelUrl })
   const resend = getResendClient()
+  const replyTo = `replies+${businessId}x${userId}@prospectorsearches.com`
 
   const { data, error } = await resend.emails.send({
     from: FROM_EMAIL,
     to: [to],
+    replyTo: replyTo,
     subject,
     html,
     text: body,

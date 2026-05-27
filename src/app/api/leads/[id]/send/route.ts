@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { sendOutreachEmail } from '@/lib/resend'
 import { checkEmailLimit, incrementUsage } from '@/lib/usage'
+import { createTrackingToken, buildTrackingPixelUrl } from '@/lib/email-tracking'
+import { createAdminClient } from '@/lib/supabase-server'
 import { z } from 'zod'
 
 const sendSchema = z.object({
@@ -56,21 +58,38 @@ export async function POST(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
 
+    // Pre-insert log so we can attach tracking token to it
+    const admin = createAdminClient()
+    const { data: logRow } = await admin
+      .from('outreach_logs')
+      .insert({
+        business_id: params.id,
+        user_id: session.user.id,
+        type: 'email',
+        subject,
+        body: emailBody,
+        sent_to: to,
+        status: 'sent',
+      })
+      .select('id')
+      .single()
+
+    const token = logRow
+      ? await createTrackingToken({
+          outreachLogId: logRow.id,
+          businessId: params.id,
+          userId: session.user.id,
+        })
+      : null
+
     const result = await sendOutreachEmail({
       to,
       subject,
       body: emailBody,
       businessName: business.name,
-    })
-
-    await supabase.from('outreach_logs').insert({
-      business_id: params.id,
-      user_id: session.user.id,
-      type: 'email',
-      subject,
-      body: emailBody,
-      sent_to: to,
-      status: 'sent',
+      businessId: params.id,
+      userId: session.user.id,
+      trackingPixelUrl: token ? buildTrackingPixelUrl(token) : undefined,
     })
 
     await supabase

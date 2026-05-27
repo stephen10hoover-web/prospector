@@ -66,7 +66,29 @@ export interface OutreachLog {
   body: string | null
   sent_to: string | null
   status: 'generated' | 'sent' | 'failed'
+  open_count: number
+  first_opened_at: string | null
   created_at: string
+}
+
+export interface AuditSection {
+  title: string
+  score: number
+  status: 'good' | 'warning' | 'critical'
+  findings: string[]
+}
+
+export interface AuditContent {
+  overview: string
+  overallScore: number
+  sections: AuditSection[]
+  recommendations: string[]
+}
+
+export interface AuditReport {
+  content: AuditContent
+  share_token: string
+  generated_at: string
 }
 
 export interface AiGeneration {
@@ -116,4 +138,45 @@ export interface DashboardStats {
   emailsSent: number
   replies: number
   avgLeadScore: number
+}
+
+export interface Sequence {
+  id: string
+  user_id: string
+  name: string
+  description: string | null
+  created_at: string
+}
+
+export interface SequenceStep {
+  id: string
+  sequence_id: string
+  step_number: number
+  delay_days: number
+  subject: string
+  body: string
+}
+
+export interface SequenceEnrollment {
+  id: string
+  sequence_id: string
+  business_id: string
+  user_id: string
+  current_step: number
+  status: 'active' | 'paused' | 'completed' | 'replied' | 'bounced' | 'cancelled'
+  enrolled_at: string
+  next_send_at: string
+  completed_at: string | null
+}
+
+export interface InboundMessage {
+  id: string
+  business_id: string
+  user_id: string
+  from_email: string
+  from_name: string | null
+  subject: string | null
+  body: string
+  received_at: string
+  read: boolean
 }

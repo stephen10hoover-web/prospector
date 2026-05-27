@@ -18,12 +18,17 @@ import {
   X,
   ChevronRight,
   Settings,
+  Inbox,
+  Kanban,
+  Zap,
+  BarChart3,
 } from 'lucide-react'
 
 interface SidebarProps {
   userEmail: string
   userId: string
   plan?: 'free' | 'pro'
+  inboxUnread?: number
 }
 
 const navItems = [
@@ -43,6 +48,26 @@ const navItems = [
     icon: Users,
   },
   {
+    label: 'Pipeline',
+    href: '/pipeline',
+    icon: Kanban,
+  },
+  {
+    label: 'Sequences',
+    href: '/sequences',
+    icon: Zap,
+  },
+  {
+    label: 'Inbox',
+    href: '/inbox',
+    icon: Inbox,
+  },
+  {
+    label: 'Analytics',
+    href: '/analytics',
+    icon: BarChart3,
+  },
+  {
     label: 'Settings',
     href: '/settings',
     icon: Settings,
@@ -53,7 +78,7 @@ function getInitials(email: string): string {
   return email.slice(0, 2).toUpperCase()
 }
 
-export function Sidebar({ userEmail, userId, plan = 'free' }: SidebarProps) {
+export function Sidebar({ userEmail, userId, plan = 'free', inboxUnread = 0 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createBrowserClient()
@@ -86,6 +111,7 @@ export function Sidebar({ userEmail, userId, plan = 'free' }: SidebarProps) {
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+          const badge = item.href === '/inbox' && inboxUnread > 0 ? inboxUnread : 0
           return (
             <Link
               key={item.href}
@@ -100,7 +126,12 @@ export function Sidebar({ userEmail, userId, plan = 'free' }: SidebarProps) {
             >
               <item.icon className="h-4 w-4 shrink-0" />
               {item.label}
-              {isActive && (
+              {badge > 0 && !isActive && (
+                <span className="ml-auto bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+              {isActive && badge === 0 && (
                 <ChevronRight className="h-3 w-3 ml-auto" />
               )}
             </Link>

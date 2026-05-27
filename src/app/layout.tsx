@@ -17,6 +17,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
+      <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}` }} />
       <body className={inter.className}>
         {children}
         <Toaster
