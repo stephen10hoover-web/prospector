@@ -88,15 +88,25 @@ Write a personalized email that addresses their specific situation. Return only 
   }
 
   try {
-    const jsonMatch = textContent.text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('No JSON found in response')
-    const parsed = JSON.parse(jsonMatch[0]) as OutreachEmail
+    // Strip markdown code fences if present
+    let raw = textContent.text.trim()
+    raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+
+    // Extract the outermost JSON object
+    const start = raw.indexOf('{')
+    const end = raw.lastIndexOf('}')
+    if (start === -1 || end === -1) throw new Error('No JSON found in response')
+    const parsed = JSON.parse(raw.slice(start, end + 1)) as OutreachEmail
+
+    if (!parsed.subject || !parsed.body) throw new Error('Missing required fields')
+
     return {
-      subject: parsed.subject ?? 'Quick question about your online presence',
-      body: parsed.body ?? textContent.text,
-      talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
+      subject: String(parsed.subject),
+      body: String(parsed.body),
+      talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints.map(String) : [],
     }
   } catch {
+    // Last resort — return whatever text Claude gave us as the body
     return {
       subject: 'Quick question about your online presence',
       body: textContent.text,
