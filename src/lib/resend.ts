@@ -16,16 +16,18 @@ function getResendClient(): Resend {
   return new Resend(process.env.RESEND_API_KEY)
 }
 
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'outreach@yourdomain.com'
+const DEFAULT_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'outreach@yourdomain.com'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS ?? ''
 
 function buildHtmlEmail(params: {
   body: string
   businessName: string
   recipientEmail: string
+  physicalAddress?: string | null
   trackingPixelUrl?: string
 }): string {
-  const { body, businessName, recipientEmail, trackingPixelUrl } = params
+  const { body, businessName, recipientEmail, physicalAddress, trackingPixelUrl } = params
   const bodyHtml = body
     .split('\n')
     .map((line) =>
@@ -36,6 +38,13 @@ function buildHtmlEmail(params: {
   const trackingPixel = trackingPixelUrl
     ? `<img src="${trackingPixelUrl}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;opacity:0;" />`
     : ''
+
+  const address = physicalAddress ?? COMPANY_ADDRESS
+  const addressHtml = address
+    ? `<br/>${escapeHtml(address)}`
+    : ''
+
+  const unsubscribeUrl = `${APP_URL}/unsubscribe?email=${encodeURIComponent(recipientEmail)}`
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -59,9 +68,8 @@ function buildHtmlEmail(params: {
             <td style="padding: 20px 40px; border-top: 1px solid #e5e7eb; background: #f9f9f9;">
               <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
                 This email was sent to ${safeBusinessName}.<br/>
-                If you'd like to unsubscribe from future emails,
-                <a href="${APP_URL}/unsubscribe?email=${encodeURIComponent(recipientEmail)}" style="color: #6b7280;">click here</a>.<br/>
-                ${process.env.COMPANY_ADDRESS ?? 'Prospector · PO Box 1234 · Austin, TX 78701'}
+                If you&apos;d like to unsubscribe from future emails,
+                <a href="${unsubscribeUrl}" style="color: #6b7280;">click here</a>.${addressHtml}
               </p>
             </td>
           </tr>
@@ -80,23 +88,29 @@ export async function sendOutreachEmail(params: {
   businessName: string
   businessId: string
   userId: string
+  fromEmail?: string | null
+  physicalAddress?: string | null
   trackingPixelUrl?: string
 }): Promise<{ id: string }> {
-  const { to, subject, body, businessName, businessId, userId, trackingPixelUrl } = params
+  const { to, subject, body, businessName, businessId, userId, fromEmail, physicalAddress, trackingPixelUrl } = params
 
-  const html = buildHtmlEmail({ body, businessName, recipientEmail: to, trackingPixelUrl })
+  const from = fromEmail ?? DEFAULT_FROM_EMAIL
+  const html = buildHtmlEmail({ body, businessName, recipientEmail: to, physicalAddress, trackingPixelUrl })
   const resend = getResendClient()
   const replyTo = `replies+${businessId}x${userId}@prospectorsearches.com`
 
+  const unsubscribeUrl = `${APP_URL}/unsubscribe?email=${encodeURIComponent(to)}`
+
   const { data, error } = await resend.emails.send({
-    from: FROM_EMAIL,
+    from,
     to: [to],
-    replyTo: replyTo,
+    replyTo,
     subject,
     html,
-    text: body,
+    text: `${body}\n\n---\nTo unsubscribe: ${unsubscribeUrl}`,
     headers: {
-      'List-Unsubscribe': `<${APP_URL}/unsubscribe>`,
+      'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
   })
 

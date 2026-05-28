@@ -169,6 +169,13 @@ export interface SequenceEnrollment {
   completed_at: string | null
 }
 
+export interface UserProfile {
+  email: string | null
+  sending_email: string | null
+  display_name: string | null
+  physical_address: string | null
+}
+
 export interface InboundMessage {
   id: string
   business_id: string

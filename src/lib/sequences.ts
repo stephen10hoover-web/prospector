@@ -27,9 +27,24 @@ export async function processSequences(userId?: string): Promise<ProcessResult> 
   const { data: enrollments, error } = await query
   if (error || !enrollments?.length) return result
 
+  // Cache user profiles to avoid redundant DB calls per enrollment
+  const profileCache = new Map<string, { sending_email: string | null; physical_address: string | null }>()
+
   for (const enrollment of enrollments) {
     try {
-      const outcome = await processEnrollment(enrollment, supabase)
+      const uid = enrollment.user_id as string
+      if (!profileCache.has(uid)) {
+        const { data: prof } = await supabase
+          .from('user_profiles')
+          .select('sending_email, physical_address')
+          .eq('id', uid)
+          .maybeSingle()
+        profileCache.set(uid, {
+          sending_email: prof?.sending_email ?? null,
+          physical_address: prof?.physical_address ?? null,
+        })
+      }
+      const outcome = await processEnrollment(enrollment, supabase, profileCache.get(uid)!)
       if (outcome === 'sent') result.processed++
       else result.skipped++
     } catch (err) {
@@ -45,7 +60,8 @@ export async function processSequences(userId?: string): Promise<ProcessResult> 
 async function processEnrollment(
   enrollment: Record<string, unknown>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any
+  supabase: any,
+  profile: { sending_email: string | null; physical_address: string | null }
 ): Promise<'sent' | 'skipped' | 'stopped'> {
   const enrollmentId = enrollment.id as string
   const businessId = enrollment.business_id as string
@@ -143,6 +159,8 @@ async function processEnrollment(
     businessName: business.name,
     businessId: business.id,
     userId,
+    fromEmail: profile.sending_email,
+    physicalAddress: profile.physical_address,
     trackingPixelUrl: token ? buildTrackingPixelUrl(token) : undefined,
   })
 

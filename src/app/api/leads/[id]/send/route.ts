@@ -62,16 +62,25 @@ export async function POST(
       )
     }
 
-    const { data: business, error: fetchError } = await supabase
-      .from('businesses')
-      .select('name')
-      .eq('id', params.id)
-      .eq('user_id', session.user.id)
-      .single()
+    const [businessResult, profileResult] = await Promise.all([
+      supabase
+        .from('businesses')
+        .select('name')
+        .eq('id', params.id)
+        .eq('user_id', session.user.id)
+        .single(),
+      adminDb
+        .from('user_profiles')
+        .select('sending_email, physical_address')
+        .eq('id', session.user.id)
+        .maybeSingle(),
+    ])
 
-    if (fetchError || !business) {
+    if (businessResult.error || !businessResult.data) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
+    const business = businessResult.data
+    const profile = profileResult.data
 
     // Pre-insert log so we can attach tracking token to it
     const admin = createAdminClient()
@@ -104,6 +113,8 @@ export async function POST(
       businessName: business.name,
       businessId: params.id,
       userId: session.user.id,
+      fromEmail: profile?.sending_email ?? null,
+      physicalAddress: profile?.physical_address ?? null,
       trackingPixelUrl: token ? buildTrackingPixelUrl(token) : undefined,
     })
 

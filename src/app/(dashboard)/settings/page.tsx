@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,9 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
-import { Loader2, Zap, CreditCard, BarChart2, CheckCircle, Palette } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Loader2, Zap, CreditCard, BarChart2, CheckCircle, Palette, Mail, MapPin } from 'lucide-react'
 import { FREE_LIMITS } from '@/lib/stripe'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import type { UserProfile } from '@/types'
 
 interface BillingData {
   plan: 'free' | 'pro'
@@ -29,13 +32,49 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [upgrading, setUpgrading] = useState(false)
   const [portaling, setPortaling] = useState(false)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [profileAddress, setProfileAddress] = useState('')
+  const [savingProfile, setSavingProfile] = useState(false)
+  const addressRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (searchParams.get('upgraded') === '1') {
       toast.success('Welcome to Pro! Your account has been upgraded.')
     }
     fetchBillingData()
+    fetchProfile()
   }, [])
+
+  async function fetchProfile() {
+    try {
+      const res = await fetch('/api/profile')
+      if (res.ok) {
+        const json: UserProfile = await res.json()
+        setProfile(json)
+        setProfileAddress(json.physical_address ?? '')
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function saveProfile() {
+    setSavingProfile(true)
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ physical_address: profileAddress.trim() || null }),
+      })
+      if (!res.ok) throw new Error('Save failed')
+      toast.success('Profile saved')
+      setProfile((p) => p ? { ...p, physical_address: profileAddress.trim() || null } : p)
+    } catch {
+      toast.error('Failed to save profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
 
   async function fetchBillingData() {
     try {
@@ -95,6 +134,54 @@ export default function SettingsPage() {
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground mt-1">Manage your plan and usage</p>
       </div>
+
+      {/* Email Identity Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Email Identity
+          </CardTitle>
+          <CardDescription>Your dedicated sending address — all outreach emails come from this address</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide">Your Sending Address</Label>
+            <div className="flex items-center gap-2 bg-muted/50 rounded-md px-3 py-2 border">
+              <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-sm font-mono font-medium">
+                {profile?.sending_email ?? '—'}
+              </span>
+              <Badge variant="secondary" className="ml-auto text-xs">Read-only</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This address is unique to your account and cannot be changed or accessed by other users.
+            </p>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label htmlFor="physical-address" className="flex items-center gap-1.5">
+              <MapPin className="h-3.5 w-3.5" />
+              Business Address
+              <span className="text-xs text-muted-foreground font-normal ml-1">(shown in email footer — required by CAN-SPAM)</span>
+            </Label>
+            <Input
+              id="physical-address"
+              ref={addressRef}
+              placeholder="123 Main St · City, State ZIP"
+              value={profileAddress}
+              onChange={(e) => setProfileAddress(e.target.value)}
+              maxLength={500}
+            />
+            <Button size="sm" onClick={saveProfile} disabled={savingProfile}>
+              {savingProfile ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+              Save Address
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Plan Card */}
       <Card>
