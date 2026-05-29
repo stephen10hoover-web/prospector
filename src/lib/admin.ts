@@ -37,7 +37,11 @@ export function getSuperAdminEmail(): string {
  */
 export function isSuperAdmin(email: string | null | undefined): boolean {
   if (!email) return false
-  return email.toLowerCase().trim() === getSuperAdminEmail()
+  try {
+    return email.toLowerCase().trim() === getSuperAdminEmail()
+  } catch {
+    return false
+  }
 }
 
 // ---------------------------------------------------------------------------
