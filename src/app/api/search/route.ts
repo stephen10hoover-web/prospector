@@ -6,8 +6,8 @@ import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { searchBusinesses } from '@/lib/business-discovery'
 import { analyzeWebsite } from '@/lib/website-analyzer'
 import { calculateLeadScore } from '@/lib/scoring'
-import { atomicCheckAndIncrement } from '@/lib/usage'
-import { FREE_LIMITS } from '@/lib/stripe'
+import { atomicCheckAndIncrement, getUserPlanStatus, periodForPlan } from '@/lib/usage'
+import { PLAN_LIMITS } from '@/lib/plans'
 import { z } from 'zod'
 
 const searchSchema = z.object({
@@ -31,20 +31,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
-    // Rate limit check — atomic to prevent TOCTOU races
-    const limitResult = await atomicCheckAndIncrement(
-      session.user.id,
-      'searches_count',
-      FREE_LIMITS.searches
-    )
-    if (!limitResult.allowed) {
+    const { category, location, radius } = parsed.data
+
+    // Resolve plan — needed for both mile limit and search limit
+    const planStatus = await getUserPlanStatus(session.user.id)
+
+    if (planStatus.isExpired) {
       return NextResponse.json(
-        { error: 'Monthly search limit reached. Upgrade to Pro for unlimited searches.' },
+        { error: 'Your free trial has expired. Upgrade to continue searching.', upgrade: true },
         { status: 402 }
       )
     }
 
-    const { category, location, radius } = parsed.data
+    const limits = PLAN_LIMITS[planStatus.planId]
+    const period = periodForPlan(planStatus.planId)
+
+    // Enforce mile (radius) limit for the user's plan
+    if (radius > limits.mileLimit) {
+      return NextResponse.json(
+        {
+          error: `Your ${planStatus.planId === 'free_trial' ? 'trial' : 'plan'} allows a maximum search radius of ${limits.mileLimit} miles. Upgrade to search further.`,
+          upgrade: true,
+          mileLimit: limits.mileLimit,
+        },
+        { status: 422 }
+      )
+    }
+
+    // Atomic search limit check + increment (prevents TOCTOU races)
+    const limitResult = await atomicCheckAndIncrement(
+      session.user.id,
+      'searches_count',
+      limits.searchLimit,
+      period
+    )
+    if (!limitResult.allowed) {
+      return NextResponse.json(
+        {
+          error: `You've used all ${limits.searchLimit} searches ${limits.period === 'week' ? 'this week' : 'this month'}. Upgrade for more.`,
+          upgrade: true,
+        },
+        { status: 402 }
+      )
+    }
+
     const adminClient = createAdminClient()
 
     const { data: search, error: searchError } = await adminClient
@@ -58,7 +88,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create search' }, { status: 500 })
     }
 
-    // Process synchronously
     try {
       const rawBusinesses = await searchBusinesses({ category, location, radius })
       console.log('[search] Got businesses:', rawBusinesses.length)

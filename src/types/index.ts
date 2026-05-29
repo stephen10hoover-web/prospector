@@ -45,11 +45,15 @@ export interface Search {
   created_at: string
 }
 
+export type { PlanId } from '@/lib/plans'
+
 export interface Subscription {
-  plan: 'free' | 'pro'
-  status: 'active' | 'past_due' | 'canceled' | 'trialing'
+  plan: import('@/lib/plans').PlanId
+  status: 'active' | 'past_due' | 'canceled' | 'trialing' | 'expired'
   current_period_end: string | null
   stripe_customer_id: string | null
+  trial_days_remaining: number | null
+  trial_expires_at: string | null
 }
 
 export interface UsageStats {

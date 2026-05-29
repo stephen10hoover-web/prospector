@@ -24,10 +24,13 @@ import {
   BarChart3,
 } from 'lucide-react'
 
+import type { PlanId } from '@/lib/plans'
+import { planDisplayName } from '@/lib/plans'
+
 interface SidebarProps {
   userEmail: string
   userId: string
-  plan?: 'free' | 'pro'
+  plan?: PlanId
   inboxUnread?: number
 }
 
@@ -78,7 +81,7 @@ function getInitials(email: string): string {
   return email.slice(0, 2).toUpperCase()
 }
 
-export function Sidebar({ userEmail, userId, plan = 'free', inboxUnread = 0 }: SidebarProps) {
+export function Sidebar({ userEmail, userId, plan = 'free_trial', inboxUnread = 0 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createBrowserClient()
@@ -148,7 +151,7 @@ export function Sidebar({ userEmail, userId, plan = 'free', inboxUnread = 0 }: S
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-medium truncate">{userEmail}</p>
-            <p className="text-xs text-muted-foreground capitalize">{plan} plan</p>
+            <p className="text-xs text-muted-foreground">{planDisplayName(plan)} Plan</p>
           </div>
         </div>
         <Button

@@ -24,6 +24,25 @@ function getOutreachDomain(): string {
   return 'prospectorsearches.com'
 }
 
+async function provisionFreeTrial(userId: string): Promise<void> {
+  const admin = createAdminClient()
+
+  const { data: existing } = await admin
+    .from('subscriptions')
+    .select('id')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (existing) return
+
+  await admin.from('subscriptions').insert({
+    user_id: userId,
+    plan: 'free_trial',
+    status: 'trialing',
+    trial_started_at: new Date().toISOString(),
+  })
+}
+
 async function provisionSendingEmail(userId: string, userEmail: string): Promise<void> {
   const admin = createAdminClient()
 
@@ -100,7 +119,10 @@ export async function GET(request: Request) {
     } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error && session) {
-      // Provision sending email non-blocking — failure must not break login
+      // Provision free trial + sending email non-blocking — failure must not break login
+      provisionFreeTrial(session.user.id).catch((e) => {
+        console.error('[auth] Failed to provision free trial:', e)
+      })
       provisionSendingEmail(
         session.user.id,
         session.user.email ?? `${session.user.id}@unknown`

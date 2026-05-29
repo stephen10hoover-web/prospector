@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { SequenceProcessor } from '@/components/layout/SequenceProcessor'
+import { getUserPlanStatus } from '@/lib/usage'
+import type { PlanId } from '@/lib/plans'
 
 export default async function DashboardLayout({
   children,
@@ -17,29 +19,19 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
-  // Fetch plan and unread count in parallel — both non-blocking
-  let plan: 'free' | 'pro' = 'free'
+  let plan: PlanId = 'free_trial'
   let inboxUnread = 0
   try {
     const adminClient = createAdminClient()
-    const [subResult, unreadResult] = await Promise.all([
-      adminClient
-        .from('subscriptions')
-        .select('plan, status')
-        .eq('user_id', session.user.id)
-        .single(),
+    const [planStatus, unreadResult] = await Promise.all([
+      getUserPlanStatus(session.user.id),
       adminClient
         .from('inbound_messages')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', session.user.id)
         .eq('read', false),
     ])
-    if (
-      subResult.data?.plan === 'pro' &&
-      (subResult.data.status === 'active' || subResult.data.status === 'trialing')
-    ) {
-      plan = 'pro'
-    }
+    plan = planStatus.planId
     inboxUnread = unreadResult.count ?? 0
   } catch {
     // Non-fatal

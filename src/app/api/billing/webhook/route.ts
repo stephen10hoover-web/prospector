@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { stripe } from '@/lib/stripe'
+import { stripe, getPlanIdFromPriceId } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase-server'
 import type Stripe from 'stripe'
 
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
         if (session.mode !== 'subscription') break
 
         const userId = session.metadata?.userId
+        const planId = (session.metadata?.planId as 'pro' | 'team') ?? 'pro'
         const subscriptionId = session.subscription as string
         const customerId = session.customer as string
 
@@ -47,9 +48,10 @@ export async function POST(request: NextRequest) {
           user_id: userId,
           stripe_customer_id: customerId,
           stripe_subscription_id: subscriptionId,
-          plan: 'pro',
+          plan: planId,
           status: subscription.status as string,
           current_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+          trial_started_at: null, // paid plan — clear trial marker
         }, { onConflict: 'user_id' })
         break
       }
@@ -68,13 +70,19 @@ export async function POST(request: NextRequest) {
 
         if (!sub) break
 
+        // Determine plan from price ID on the subscription
+        const priceId = subscription.items?.data?.[0]?.price?.id as string | undefined
         const plan = event.type === 'customer.subscription.deleted'
-          ? 'free'
-          : (subscription.status === 'active' || subscription.status === 'trialing' ? 'pro' : 'free')
+          ? 'free_trial'
+          : (priceId ? getPlanIdFromPriceId(priceId) : 'pro')
+
+        const status = event.type === 'customer.subscription.deleted'
+          ? 'canceled'
+          : subscription.status
 
         await adminClient.from('subscriptions').update({
           plan,
-          status: subscription.status,
+          status,
           current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
         }).eq('stripe_customer_id', customerId)
         break
@@ -91,7 +99,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error('Webhook handler error:', error)
-    // Return 200 to Stripe so it doesn't retry — log the error internally
+    // Return 200 so Stripe doesn't retry — error is logged internally
   }
 
   return NextResponse.json({ received: true })
