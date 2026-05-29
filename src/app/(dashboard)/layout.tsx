@@ -3,6 +3,7 @@ import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { SequenceProcessor } from '@/components/layout/SequenceProcessor'
 import { getUserPlanStatus } from '@/lib/usage'
+import { isSuperAdmin } from '@/lib/admin'
 import type { PlanId } from '@/lib/plans'
 
 export default async function DashboardLayout({
@@ -39,7 +40,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar userEmail={session.user.email ?? ''} userId={session.user.id} plan={plan} inboxUnread={inboxUnread} />
+      <Sidebar userEmail={session.user.email ?? ''} userId={session.user.id} plan={plan} inboxUnread={inboxUnread} isAdmin={isSuperAdmin(session.user.email)} />
       <main className="flex-1 overflow-y-auto">
         <div className="p-6 lg:p-8">
           {children}
