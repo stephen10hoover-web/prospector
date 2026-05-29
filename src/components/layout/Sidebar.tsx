@@ -22,6 +22,7 @@ import {
   Kanban,
   Zap,
   BarChart3,
+  ShieldAlert,
 } from 'lucide-react'
 
 import type { PlanId } from '@/lib/plans'
@@ -32,6 +33,7 @@ interface SidebarProps {
   userId: string
   plan?: PlanId
   inboxUnread?: number
+  isAdmin?: boolean
 }
 
 const navItems = [
@@ -81,7 +83,7 @@ function getInitials(email: string): string {
   return email.slice(0, 2).toUpperCase()
 }
 
-export function Sidebar({ userEmail, userId, plan = 'free_trial', inboxUnread = 0 }: SidebarProps) {
+export function Sidebar({ userEmail, userId, plan = 'free_trial', inboxUnread = 0, isAdmin = false }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createBrowserClient()
@@ -141,6 +143,22 @@ export function Sidebar({ userEmail, userId, plan = 'free_trial', inboxUnread = 
           )
         })}
       </nav>
+
+      {isAdmin && (
+        <>
+          <Separator />
+          <div className="px-3 py-3">
+            <Link
+              href="/internal/core/ops/console"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+            >
+              <ShieldAlert className="h-4 w-4 shrink-0" />
+              Admin Console
+            </Link>
+          </div>
+        </>
+      )}
 
       <Separator />
 
