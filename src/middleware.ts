@@ -1,26 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient as createSSRClient } from '@supabase/ssr'
 
-// In-memory sliding window rate limiter (resets on cold start — good enough for basic protection)
+// ---------------------------------------------------------------------------
+// Security headers applied to every response
+// ---------------------------------------------------------------------------
+const SECURITY_HEADERS: Record<string, string> = {
+  'X-Frame-Options':           'DENY',
+  'X-Content-Type-Options':    'nosniff',
+  'X-XSS-Protection':          '1; mode=block',
+  'Referrer-Policy':           'strict-origin-when-cross-origin',
+  'Permissions-Policy':        'camera=(), microphone=(), geolocation=()',
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiting (in-memory sliding window — resets on cold start)
+// ---------------------------------------------------------------------------
 const ipCounters = new Map<string, { count: number; resetAt: number }>()
 
 const RATE_LIMITS: Record<string, { max: number; windowMs: number }> = {
-  '/api/search':              { max: 5,  windowMs: 60_000 },   // 5 searches/min
-  '/api/leads':               { max: 60, windowMs: 60_000 },   // 60 reads/min
-  '/api/auth':                { max: 10, windowMs: 60_000 },   // 10 auth attempts/min
-  '/api/unsubscribe':         { max: 10, windowMs: 60_000 },
-  default:                    { max: 120, windowMs: 60_000 },  // 120 req/min general
+  '/api/internal':   { max: 60,  windowMs: 60_000 },  // admin API — lower ceiling
+  '/api/search':     { max: 5,   windowMs: 60_000 },
+  '/api/leads':      { max: 60,  windowMs: 60_000 },
+  '/api/auth':       { max: 10,  windowMs: 60_000 },
+  '/api/unsubscribe':{ max: 10,  windowMs: 60_000 },
+  '/api/track':      { max: 200, windowMs: 60_000 },  // event tracking — higher ceiling
+  default:           { max: 120, windowMs: 60_000 },
 }
 
 const BLOCKED_UA_PATTERNS = [
-  /python-requests/i,
-  /go-http-client/i,
-  /libwww-perl/i,
-  /curl\//i,
-  /wget\//i,
-  /scrapy/i,
-  /zgrab/i,
-  /masscan/i,
-  /nmap/i,
+  /python-requests/i, /go-http-client/i, /libwww-perl/i,
+  /curl\//i, /wget\//i, /scrapy/i, /zgrab/i, /masscan/i, /nmap/i,
 ]
 
 function getLimit(pathname: string) {
@@ -40,46 +50,94 @@ function checkRateLimit(ip: string, pathname: string): boolean {
     ipCounters.set(key, { count: 1, resetAt: now + windowMs })
     return true
   }
-
   if (entry.count >= max) return false
   entry.count++
   return true
 }
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
-
-  // Only apply to API routes
-  if (!pathname.startsWith('/api/')) return NextResponse.next()
-
-  // Block known bad user agents on API routes
-  const ua = request.headers.get('user-agent') ?? ''
-  if (!ua || BLOCKED_UA_PATTERNS.some((p) => p.test(ua))) {
-    return new NextResponse(JSON.stringify({ error: 'Forbidden' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json' },
-    })
+function addSecurityHeaders(response: NextResponse): NextResponse {
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    response.headers.set(key, value)
   }
+  return response
+}
 
-  // IP-based rate limiting
+// ---------------------------------------------------------------------------
+// Middleware
+// ---------------------------------------------------------------------------
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
   const ip =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
     request.headers.get('x-real-ip') ??
     '127.0.0.1'
 
-  if (!checkRateLimit(ip, pathname)) {
-    return new NextResponse(JSON.stringify({ error: 'Too many requests. Please slow down.' }), {
-      status: 429,
-      headers: {
-        'Content-Type': 'application/json',
-        'Retry-After': '60',
-      },
-    })
+  // ------------------------------------------------------------------
+  // Admin console routes: /internal/*
+  // Layer 1 defense: verify a Supabase session exists before serving any
+  // admin content. Layer 2 (full email verification) happens inside each
+  // server component via requireSuperAdmin().
+  // ------------------------------------------------------------------
+  if (pathname.startsWith('/internal/')) {
+    const response = NextResponse.next()
+
+    // Reconstruct a Supabase SSR client so we can read the session cookie
+    const supabase = createSSRClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) { return request.cookies.get(name)?.value },
+          set(name: string, value: string, options: Record<string, unknown>) { response.cookies.set({ name, value, ...options }) },
+          remove(name: string, options: Record<string, unknown>) { response.cookies.set({ name, value: '', ...options }) },
+        },
+      }
+    )
+
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (!session) {
+      const loginUrl = new URL('/login', request.url)
+      loginUrl.searchParams.set('next', pathname)
+      return addSecurityHeaders(NextResponse.redirect(loginUrl))
+    }
+
+    return addSecurityHeaders(response)
   }
 
-  return NextResponse.next()
+  // ------------------------------------------------------------------
+  // API routes: apply bot blocking + rate limiting
+  // ------------------------------------------------------------------
+  if (pathname.startsWith('/api/')) {
+    // Block known bad user agents
+    const ua = request.headers.get('user-agent') ?? ''
+    // Allow Resend inbound webhooks (no UA check for internal webhook paths)
+    const isWebhook = pathname.startsWith('/api/inbox/') || pathname.startsWith('/api/billing/webhook')
+    if (!isWebhook && (!ua || BLOCKED_UA_PATTERNS.some((p) => p.test(ua)))) {
+      return addSecurityHeaders(
+        new NextResponse(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    }
+
+    if (!checkRateLimit(ip, pathname)) {
+      return addSecurityHeaders(
+        new NextResponse(JSON.stringify({ error: 'Too many requests. Please slow down.' }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60',
+          },
+        })
+      )
+    }
+  }
+
+  return addSecurityHeaders(NextResponse.next())
 }
 
 export const config = {
-  matcher: '/api/:path*',
+  matcher: ['/api/:path*', '/internal/:path*'],
 }

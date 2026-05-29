@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
+import { Suspense } from 'react'
 import { CookieConsent } from '@/components/CookieConsent'
+import { PostHogProvider } from '@/components/analytics/PostHogProvider'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -21,19 +23,23 @@ export default function RootLayout({
       {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
       <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}` }} />
       <body className={inter.className}>
-        {children}
-        <CookieConsent />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: 'hsl(var(--card))',
-              color: 'hsl(var(--card-foreground))',
-              border: '1px solid hsl(var(--border))',
-            },
-          }}
-        />
+        <Suspense>
+          <PostHogProvider>
+            {children}
+            <CookieConsent />
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                duration: 4000,
+                style: {
+                  background: 'hsl(var(--card))',
+                  color: 'hsl(var(--card-foreground))',
+                  border: '1px solid hsl(var(--border))',
+                },
+              }}
+            />
+          </PostHogProvider>
+        </Suspense>
       </body>
     </html>
   )
