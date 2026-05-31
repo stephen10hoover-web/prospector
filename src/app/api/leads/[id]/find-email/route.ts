@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { findBusinessEmail } from '@/lib/email-finder'
 import { atomicCheckAndIncrement, getUserPlan } from '@/lib/usage'
+import { isUUID } from '@/lib/validate'
 
 // Free users get 20 email lookups/month (shared with email sends).
 // Pro users are unlimited. This prevents burning Hunter.io credits without a cap.
