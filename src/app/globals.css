@@ -55,5 +55,21 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
+  ::selection {
+    background: rgba(59, 130, 246, 0.25);
+    color: #fff;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Landing page — suppress default scrollbar styling */
+.landing-scroll::-webkit-scrollbar {
+  display: none;
 }

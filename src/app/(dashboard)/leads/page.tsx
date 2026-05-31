@@ -25,7 +25,7 @@ async function getLeads(
   userId: string,
   filters: LeadsPageProps['searchParams']
 ): Promise<{ leads: Business[]; total: number }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const page = Math.max(1, parseInt(filters.page ?? '1'))
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
@@ -49,7 +49,7 @@ async function getLeads(
 }
 
 export default async function LeadsPage({ searchParams }: LeadsPageProps) {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
     data: { session },
   } = await supabase.auth.getSession()

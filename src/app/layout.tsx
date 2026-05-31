@@ -20,8 +20,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
-      <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}` }} />
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}` }} />
+      </head>
       <body className={inter.className}>
         <Suspense>
           <PostHogProvider>

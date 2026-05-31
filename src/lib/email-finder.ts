@@ -19,16 +19,19 @@ async function findViaHunter(domain: string): Promise<EmailResult | null> {
   if (!apiKey) return null
 
   try {
+    // API key sent as Authorization header — keeps it out of server access logs / proxy logs
     const url = new URL('https://api.hunter.io/v2/domain-search')
     url.searchParams.set('domain', domain)
-    url.searchParams.set('api_key', apiKey)
     url.searchParams.set('limit', '5')
     url.searchParams.set('type', 'personal')
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-    const res = await fetch(url.toString(), { signal: controller.signal })
+    const res = await fetch(url.toString(), {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${apiKey}` },
+    })
     clearTimeout(timeoutId)
 
     if (!res.ok) return null

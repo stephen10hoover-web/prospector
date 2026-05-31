@@ -1,6 +1,8 @@
 import { createAdminClient } from './supabase-server'
 import { sendOutreachEmail } from './resend'
 import { createTrackingToken, buildTrackingPixelUrl } from './email-tracking'
+import { atomicCheckAndIncrement, getUserPlan } from './usage'
+import { FREE_LIMITS } from './stripe'
 
 const BATCH_SIZE = 50
 
@@ -122,6 +124,21 @@ async function processEnrollment(
 
   if (!business?.email) return 'skipped'
 
+  // Enforce per-user monthly email limit before spending Resend quota.
+  // Pro users are unlimited; free users share the same cap as manual sends.
+  const plan = await getUserPlan(userId)
+  if (plan !== 'pro') {
+    const limitResult = await atomicCheckAndIncrement(userId, 'emails_sent_count', FREE_LIMITS.emails)
+    if (!limitResult.allowed) {
+      // Pause the enrollment rather than silently dropping — user can resume after upgrading
+      await supabase
+        .from('sequence_enrollments')
+        .update({ status: 'paused' })
+        .eq('id', enrollmentId)
+      return 'skipped'
+    }
+  }
+
   const subject = substituteVars(step.subject as string, business)
   const body = substituteVars(step.body as string, business)
 
@@ -210,10 +227,16 @@ async function advanceEnrollment(
     .eq('id', enrollmentId)
 }
 
+// Strip CRLF and lone CR/LF from a value before injecting into email headers or body.
+// Prevents email header injection (RFC 2822 folding / CRLF injection attacks).
+function sanitizeEmailValue(value: string): string {
+  return value.replace(/[\r\n]/g, ' ').trim()
+}
+
 function substituteVars(template: string, business: Record<string, unknown>): string {
   return template
-    .replace(/\{\{name\}\}/gi, (business.name as string) ?? '')
-    .replace(/\{\{city\}\}/gi, (business.city as string) ?? '')
-    .replace(/\{\{state\}\}/gi, (business.state as string) ?? '')
-    .replace(/\{\{category\}\}/gi, (business.category as string) ?? '')
+    .replace(/\{\{name\}\}/gi, sanitizeEmailValue((business.name as string) ?? ''))
+    .replace(/\{\{city\}\}/gi, sanitizeEmailValue((business.city as string) ?? ''))
+    .replace(/\{\{state\}\}/gi, sanitizeEmailValue((business.state as string) ?? ''))
+    .replace(/\{\{category\}\}/gi, sanitizeEmailValue((business.category as string) ?? ''))
 }

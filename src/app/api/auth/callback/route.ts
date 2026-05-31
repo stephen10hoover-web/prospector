@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient as createSSRClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase-server'
 
 function sanitizeUsername(email: string): string {
@@ -90,8 +90,19 @@ async function provisionSendingEmail(userId: string, userEmail: string): Promise
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const rawNext = searchParams.get('next') ?? '/dashboard'
-  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard'
+  // Strictly validate the redirect target: parse it relative to origin so that
+  // tricks like "/\attacker.com" or "//evil.com" are normalised to a safe path.
+  const rawNext = searchParams.get('next') ?? '/search'
+  let next = '/dashboard'
+  try {
+    const resolved = new URL(rawNext, origin)
+    // Only allow same-origin redirects
+    if (resolved.origin === origin) {
+      next = resolved.pathname + resolved.search + resolved.hash
+    }
+  } catch {
+    // Invalid URL — keep default
+  }
 
   if (code) {
     const cookieStore = cookies()
@@ -113,22 +124,48 @@ export async function GET(request: Request) {
       }
     )
 
-    const {
-      data: { session },
-      error,
-    } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error && data.user) {
+      const userId = data.user.id
 
-    if (!error && session) {
+      // Log consent on first login — non-blocking, best-effort
+      try {
+        const admin = createAdminClient()
+        const { count } = await admin
+          .from('consent_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+
+        if (count === 0) {
+          const reqHeaders = headers()
+          const ip = reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
+            ?? reqHeaders.get('x-real-ip')
+            ?? null
+          const ua = reqHeaders.get('user-agent') ?? null
+
+          await admin.from('consent_logs').insert({
+            user_id: userId,
+            ip_address: ip,
+            user_agent: ua,
+            terms_version: '1.1',
+            privacy_version: '1.1',
+          })
+        }
+      } catch {
+        // Non-fatal — signup still succeeds
+      }
+
       // Provision free trial + sending email non-blocking — failure must not break login
-      provisionFreeTrial(session.user.id).catch((e) => {
+      provisionFreeTrial(userId).catch((e) => {
         console.error('[auth] Failed to provision free trial:', e)
       })
       provisionSendingEmail(
-        session.user.id,
-        session.user.email ?? `${session.user.id}@unknown`
+        userId,
+        data.user.email ?? `${userId}@unknown`
       ).catch((e) => {
         console.error('[auth] Failed to provision sending email:', e)
       })
+
       return NextResponse.redirect(`${origin}${next}`)
     }
   }

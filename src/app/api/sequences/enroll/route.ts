@@ -9,9 +9,9 @@ const enrollSchema = z.object({
 })
 
 export async function POST(request: NextRequest) {
-  const supabase = createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
   const parsed = enrollSchema.safeParse(body)
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     .from('sequences')
     .select('id, sequence_steps(step_number, delay_days)')
     .eq('id', sequenceId)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user?.id)
     .single()
 
   if (!sequence) return NextResponse.json({ error: 'Sequence not found' }, { status: 404 })
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     .from('businesses')
     .select('id')
     .eq('id', businessId)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user?.id)
     .single()
 
   if (!business) return NextResponse.json({ error: 'Business not found' }, { status: 404 })
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     .insert({
       sequence_id: sequenceId,
       business_id: businessId,
-      user_id: session.user.id,
+      user_id: user?.id,
       current_step: 1,
       status: 'active',
       next_send_at: nextSendAt.toISOString(),
@@ -67,16 +67,17 @@ export async function POST(request: NextRequest) {
     if (error.code === '23505') {
       return NextResponse.json({ error: 'This lead is already enrolled in this sequence' }, { status: 409 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('[enroll] insert error:', error.message)
+    return NextResponse.json({ error: 'Failed to enroll lead in sequence' }, { status: 500 })
   }
 
   return NextResponse.json(enrollment, { status: 201 })
 }
 
 export async function DELETE(request: NextRequest) {
-  const supabase = createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { enrollmentId } = await request.json()
   if (!enrollmentId) return NextResponse.json({ error: 'enrollmentId required' }, { status: 400 })
@@ -86,7 +87,7 @@ export async function DELETE(request: NextRequest) {
     .from('sequence_enrollments')
     .update({ status: 'cancelled', completed_at: new Date().toISOString() })
     .eq('id', enrollmentId)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user?.id)
 
   return NextResponse.json({ ok: true })
 }

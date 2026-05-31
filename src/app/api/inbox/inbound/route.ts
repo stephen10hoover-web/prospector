@@ -2,6 +2,17 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-server'
 
+// Constant-time string comparison — prevents timing-based secret enumeration
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  const enc = new TextEncoder()
+  const ab = enc.encode(a)
+  const bb = enc.encode(b)
+  let diff = 0
+  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i]
+  return diff === 0
+}
+
 // Parse "Name <email>" or bare "email" format
 function parseFrom(raw: string): { email: string; name: string | null } {
   const match = raw.match(/^(.+?)\s*<([^>]+)>$/)
@@ -36,9 +47,10 @@ function extractNewContent(text: string): string {
 }
 
 export async function POST(request: NextRequest) {
-  // Verify webhook secret passed as ?secret= query param
-  const secret = request.nextUrl.searchParams.get('secret')
-  if (!process.env.INBOUND_WEBHOOK_SECRET || secret !== process.env.INBOUND_WEBHOOK_SECRET) {
+  // Verify webhook secret via Authorization header (not query param — avoids logging in CDN/proxy access logs)
+  const authHeader = request.headers.get('authorization') ?? ''
+  const secret = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
+  if (!process.env.INBOUND_WEBHOOK_SECRET || !timingSafeEqual(secret, process.env.INBOUND_WEBHOOK_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -113,7 +113,7 @@ export interface LimitCheck {
  */
 export async function atomicCheckAndIncrement(
   userId: string,
-  field: 'searches_count' | 'emails_sent_count' | 'outreach_generated_count',
+  field: 'searches_count' | 'emails_sent_count' | 'outreach_generated_count' | 'audit_generated_count',
   limit: number,
   period?: string
 ): Promise<{ allowed: boolean }> {

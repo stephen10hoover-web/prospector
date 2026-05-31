@@ -3,26 +3,30 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { analyzeWebsite } from '@/lib/website-analyzer'
 import { calculateLeadScore } from '@/lib/scoring'
+import { isUUID } from '@/lib/validate'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isUUID(params.id)) {
+      return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
     }
 
     const { data: business, error: fetchError } = await supabase
       .from('businesses')
       .select('*')
       .eq('id', params.id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user!.id)
       .single()
 
     if (fetchError || !business) {

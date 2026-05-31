@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { signUnsubscribeToken, buildUnsubscribeUrl } from '@/lib/unsubscribe-token'
 
 function escapeHtml(str: string): string {
   return str
@@ -18,16 +19,17 @@ function getResendClient(): Resend {
 
 const DEFAULT_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'outreach@yourdomain.com'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS ?? ''
 
 function buildHtmlEmail(params: {
   body: string
   businessName: string
-  recipientEmail: string
-  physicalAddress?: string | null
+  unsubscribeUrl: string
   trackingPixelUrl?: string
+  senderName?: string
+  senderCompany?: string
+  senderAddress?: string
 }): string {
-  const { body, businessName, recipientEmail, physicalAddress, trackingPixelUrl } = params
+  const { body, businessName, unsubscribeUrl, trackingPixelUrl, senderName, senderCompany, senderAddress } = params
   const bodyHtml = body
     .split('\n')
     .map((line) =>
@@ -39,12 +41,10 @@ function buildHtmlEmail(params: {
     ? `<img src="${trackingPixelUrl}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;opacity:0;" />`
     : ''
 
-  const address = physicalAddress ?? COMPANY_ADDRESS
-  const addressHtml = address
-    ? `<br/>${escapeHtml(address)}`
-    : ''
-
-  const unsubscribeUrl = `${APP_URL}/unsubscribe?email=${encodeURIComponent(recipientEmail)}`
+  const footerAddress = escapeHtml(
+    [senderName, senderCompany, senderAddress].filter(Boolean).join(' · ') ||
+    (process.env.COMPANY_ADDRESS ?? '')
+  )
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -68,8 +68,9 @@ function buildHtmlEmail(params: {
             <td style="padding: 20px 40px; border-top: 1px solid #e5e7eb; background: #f9f9f9;">
               <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
                 This email was sent to ${safeBusinessName}.<br/>
-                If you&apos;d like to unsubscribe from future emails,
-                <a href="${unsubscribeUrl}" style="color: #6b7280;">click here</a>.${addressHtml}
+                If you'd like to unsubscribe from future emails,
+                <a href="${unsubscribeUrl}" style="color: #6b7280;">click here</a>.<br/>
+                ${footerAddress}
               </p>
             </td>
           </tr>
@@ -89,17 +90,21 @@ export async function sendOutreachEmail(params: {
   businessId: string
   userId: string
   fromEmail?: string | null
-  physicalAddress?: string | null
   trackingPixelUrl?: string
+  senderName?: string
+  senderCompany?: string
+  senderAddress?: string
 }): Promise<{ id: string }> {
-  const { to, subject, body, businessName, businessId, userId, fromEmail, physicalAddress, trackingPixelUrl } = params
+  const { to, subject, body, businessName, businessId, userId, fromEmail, trackingPixelUrl, senderName, senderCompany, senderAddress } = params
 
   const from = fromEmail ?? DEFAULT_FROM_EMAIL
-  const html = buildHtmlEmail({ body, businessName, recipientEmail: to, physicalAddress, trackingPixelUrl })
+
+  const token = await signUnsubscribeToken(to, userId)
+  const unsubscribeUrl = buildUnsubscribeUrl(APP_URL, to, userId, token)
+
+  const html = buildHtmlEmail({ body, businessName, unsubscribeUrl, trackingPixelUrl, senderName, senderCompany, senderAddress })
   const resend = getResendClient()
   const replyTo = `replies+${businessId}x${userId}@prospectorsearches.com`
-
-  const unsubscribeUrl = `${APP_URL}/unsubscribe?email=${encodeURIComponent(to)}`
 
   const { data, error } = await resend.emails.send({
     from,

@@ -61,7 +61,7 @@ function getWeekLabel(date: Date): string {
 }
 
 export default async function AnalyticsPage() {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
 

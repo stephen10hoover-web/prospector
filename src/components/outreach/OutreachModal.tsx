@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRotatingText } from '@/hooks/useRotatingText'
 import toast from 'react-hot-toast'
 import type { Business, OutreachEmail } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,29 @@ export function OutreachModal({ business, defaultOpen = false, onClose }: Outrea
   const [open, setOpen] = useState(defaultOpen)
   const [generating, setGenerating] = useState(false)
   const [sending, setSending] = useState(false)
+
+  const generateText = useRotatingText(
+    [
+      'Generating your email...',
+      'Reading their website...',
+      'Finding the right angle...',
+      'Crafting your opener...',
+      'Personalizing the pitch...',
+      'Polishing the copy...',
+      'Almost there...',
+    ],
+    generating
+  )
+
+  const sendText = useRotatingText(
+    [
+      'Sending...',
+      'Connecting to mail server...',
+      'Delivering your email...',
+      'Confirming delivery...',
+    ],
+    sending
+  )
   const [email, setEmail] = useState<OutreachEmail | null>(null)
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
@@ -137,7 +161,7 @@ export function OutreachModal({ business, defaultOpen = false, onClose }: Outrea
                 {generating ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Generating...
+                    {generateText}
                   </>
                 ) : (
                   <>
@@ -216,7 +240,7 @@ export function OutreachModal({ business, defaultOpen = false, onClose }: Outrea
                   {generating ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Regenerating...
+                      {generateText}
                     </>
                   ) : (
                     <>
@@ -233,7 +257,7 @@ export function OutreachModal({ business, defaultOpen = false, onClose }: Outrea
                   {sending ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Sending...
+                      {sendText}
                     </>
                   ) : (
                     <>

@@ -12,17 +12,22 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Loader2, Zap, CreditCard, BarChart2, CheckCircle, Palette,
-  Mail, MapPin, Clock, Star, Users, Shield,
+  Mail, MapPin, Clock, Star, Users, Shield, User, Download, Trash2,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { PLAN_META, PLAN_LIMITS, planDisplayName, type PlanId } from '@/lib/plans'
 import type { UserProfile } from '@/types'
 
+interface SenderProfile {
+  full_name: string
+  company_name: string
+  mailing_address: string
+}
+
 interface BillingData {
   plan: PlanId
   status: string
   current_period_end: string | null
-  stripe_customer_id: string | null
   is_expired: boolean
   trial_days_remaining: number | null
   trial_expires_at: string | null
@@ -51,10 +56,10 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [upgrading, setUpgrading] = useState<PlanId | null>(null)
   const [portaling, setPortaling] = useState(false)
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [profileAddress, setProfileAddress] = useState('')
+  const [profile, setProfile] = useState<SenderProfile>({ full_name: '', company_name: '', mailing_address: '' })
   const [savingProfile, setSavingProfile] = useState(false)
-  const addressRef = useRef<HTMLInputElement>(null)
+  const [exporting, setExporting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (searchParams.get('upgraded') === '1') {
@@ -68,9 +73,12 @@ export default function SettingsPage() {
     try {
       const res = await fetch('/api/profile')
       if (res.ok) {
-        const json: UserProfile = await res.json()
-        setProfile(json)
-        setProfileAddress(json.physical_address ?? '')
+        const json = await res.json()
+        setProfile({
+          full_name: json.full_name ?? '',
+          company_name: json.company_name ?? '',
+          mailing_address: json.mailing_address ?? '',
+        })
       }
     } catch {
       // non-fatal
@@ -81,17 +89,51 @@ export default function SettingsPage() {
     setSavingProfile(true)
     try {
       const res = await fetch('/api/profile', {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ physical_address: profileAddress.trim() || null }),
+        body: JSON.stringify(profile),
       })
-      if (!res.ok) throw new Error('Save failed')
+      if (!res.ok) throw new Error('Failed to save')
       toast.success('Profile saved')
-      setProfile((p) => p ? { ...p, physical_address: profileAddress.trim() || null } : p)
     } catch {
       toast.error('Failed to save profile')
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  async function exportData() {
+    setExporting(true)
+    try {
+      const res = await fetch('/api/account/export')
+      if (!res.ok) throw new Error('Export failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `prospector-export-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to export data')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function deleteAccount() {
+    const confirmed = window.confirm(
+      'Are you sure you want to permanently delete your account? This cannot be undone. All your leads, outreach history, and settings will be deleted.'
+    )
+    if (!confirmed) return
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/account', { method: 'DELETE' })
+      if (!res.ok) throw new Error('Deletion failed')
+      window.location.href = '/'
+    } catch {
+      toast.error('Failed to delete account. Please contact support@prospector.app.')
+      setDeleting(false)
     }
   }
 
@@ -320,55 +362,53 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Email Identity */}
+      {/* Sender Profile Card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Mail className="h-5 w-5" />
-            Email Identity
+            <User className="h-5 w-5" />
+            Sender Profile
           </CardTitle>
-          <CardDescription>Your dedicated sending address — all outreach emails come from this address</CardDescription>
+          <CardDescription>
+            Your name and address appear in the footer of every outreach email you send, as required by CAN-SPAM law.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide">Your Sending Address</Label>
-            <div className="flex items-center gap-2 bg-muted/50 rounded-md px-3 py-2 border">
-              <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-sm font-mono font-medium">
-                {profile?.sending_email ?? '—'}
-              </span>
-              <Badge variant="secondary" className="ml-auto text-xs">Read-only</Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              This address is unique to your account and cannot be changed or accessed by other users.
-            </p>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-2">
-            <Label htmlFor="physical-address" className="flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5" />
-              Business Address
-              <span className="text-xs text-muted-foreground font-normal ml-1">(shown in email footer — required by CAN-SPAM)</span>
-            </Label>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="full_name">Your Name</Label>
             <Input
-              id="physical-address"
-              ref={addressRef}
-              placeholder="123 Main St · City, State ZIP"
-              value={profileAddress}
-              onChange={(e) => setProfileAddress(e.target.value)}
-              maxLength={500}
+              id="full_name"
+              placeholder="Jane Smith"
+              value={profile.full_name}
+              onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))}
             />
-            <Button size="sm" onClick={saveProfile} disabled={savingProfile}>
-              {savingProfile ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
-              Save Address
-            </Button>
           </div>
+          <div className="grid gap-2">
+            <Label htmlFor="company_name">Company Name</Label>
+            <Input
+              id="company_name"
+              placeholder="Acme LLC"
+              value={profile.company_name}
+              onChange={(e) => setProfile((p) => ({ ...p, company_name: e.target.value }))}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="mailing_address">Mailing Address</Label>
+            <Input
+              id="mailing_address"
+              placeholder="123 Main St · Austin, TX 78701"
+              value={profile.mailing_address}
+              onChange={(e) => setProfile((p) => ({ ...p, mailing_address: e.target.value }))}
+            />
+          </div>
+          <Button onClick={saveProfile} disabled={savingProfile}>
+            {savingProfile ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            Save Profile
+          </Button>
         </CardContent>
       </Card>
 
-      {/* Appearance */}
+      {/* Appearance Card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -379,6 +419,38 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <ThemeToggle />
+        </CardContent>
+      </Card>
+
+      {/* Data & Privacy Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5" />
+            Data &amp; Privacy
+          </CardTitle>
+          <CardDescription>Export or permanently delete your account data.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">
+              Download a copy of all your data including searches, leads, and outreach history.
+            </p>
+            <Button variant="outline" onClick={exportData} disabled={exporting} className="w-fit">
+              {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+              Export My Data
+            </Button>
+          </div>
+          <Separator />
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">
+              Permanently delete your account and all associated data. This cannot be undone.
+            </p>
+            <Button variant="destructive" onClick={deleteAccount} disabled={deleting} className="w-fit">
+              {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              Delete My Account
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

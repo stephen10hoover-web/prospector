@@ -4,12 +4,12 @@ import { createServerClient } from '@/lib/supabase-server'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -24,15 +24,23 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('businesses')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user?.id)
       .order('lead_score', { ascending: false })
 
     if (searchId) query = query.eq('search_id', searchId)
     if (category) query = query.ilike('category', `%${category}%`)
     if (city) query = query.ilike('city', `%${city}%`)
     if (status) query = query.eq('outreach_status', status)
-    if (minScore) query = query.gte('lead_score', parseInt(minScore))
-    if (maxScore) query = query.lte('lead_score', parseInt(maxScore))
+
+    // Parse score filters safely — parseInt can return NaN for non-numeric input
+    if (minScore) {
+      const min = parseInt(minScore, 10)
+      if (!isNaN(min)) query = query.gte('lead_score', Math.max(0, Math.min(100, min)))
+    }
+    if (maxScore) {
+      const max = parseInt(maxScore, 10)
+      if (!isNaN(max)) query = query.lte('lead_score', Math.max(0, Math.min(100, max)))
+    }
 
     const { data, error } = await query.limit(200)
 

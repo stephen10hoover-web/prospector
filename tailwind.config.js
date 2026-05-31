@@ -12,9 +12,7 @@ module.exports = {
     container: {
       center: true,
       padding: '2rem',
-      screens: {
-        '2xl': '1400px',
-      },
+      screens: { '2xl': '1400px' },
     },
     extend: {
       colors: {
@@ -66,10 +64,25 @@ module.exports = {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: '0' },
         },
+        float: {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-8px)' },
+        },
+        'pulse-dot': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.4' },
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% center' },
+          '100%': { backgroundPosition: '200% center' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        float: 'float 6s ease-in-out infinite',
+        'pulse-dot': 'pulse-dot 2s ease-in-out infinite',
+        shimmer: 'shimmer 2.5s linear infinite',
       },
     },
   },

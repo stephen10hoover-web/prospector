@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { z } from 'zod'
+import { isUUID } from '@/lib/validate'
 
 const VALID_STAGES = [
   'new_lead', 'contacted', 'follow_up', 'replied',
@@ -17,9 +18,10 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isUUID(params.id)) return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
 
   const body = await request.json()
   const parsed = schema.safeParse(body)
@@ -29,8 +31,11 @@ export async function PATCH(
     .from('businesses')
     .update({ pipeline_stage: parsed.data.stage })
     .eq('id', params.id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user!.id)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[stage] update error:', error.message)
+    return NextResponse.json({ error: 'Failed to update stage' }, { status: 500 })
+  }
   return NextResponse.json({ ok: true })
 }

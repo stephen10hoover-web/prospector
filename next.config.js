@@ -16,7 +16,12 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      // 'unsafe-inline' is required for Next.js 14 client-side hydration scripts.
+      // To remove it, implement a nonce-based CSP threaded through middleware.
+      // 'unsafe-eval' is required by React dev tools only — never present in production builds
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
+      // 'unsafe-inline' kept for style-src only — CSS-in-JS (Tailwind/styled-components)
+      // still requires it. Move to nonce-based CSP if XSS risk from styles becomes a concern.
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self'",
@@ -28,10 +33,10 @@ const securityHeaders = [
 
 const nextConfig = {
   images: {
-    domains: [
-      'lh3.googleusercontent.com',
-      'maps.googleapis.com',
-      'streetviewpixels-pa.googleapis.com',
+    remotePatterns: [
+      { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
+      { protocol: 'https', hostname: 'maps.googleapis.com' },
+      { protocol: 'https', hostname: 'streetviewpixels-pa.googleapis.com' },
     ],
   },
   async headers() {

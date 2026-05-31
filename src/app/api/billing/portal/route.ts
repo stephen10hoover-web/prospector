@@ -9,12 +9,12 @@ export async function POST(_request: NextRequest) {
     return NextResponse.json({ error: 'Billing not configured' }, { status: 503 })
   }
 
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+    } = await supabase.auth.getUser()
 
-  if (!session) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -22,7 +22,7 @@ export async function POST(_request: NextRequest) {
   const { data: sub } = await adminClient
     .from('subscriptions')
     .select('stripe_customer_id')
-    .eq('user_id', session.user.id)
+    .eq('user_id', user?.id)
     .single()
 
   if (!sub?.stripe_customer_id) {

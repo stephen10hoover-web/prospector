@@ -10,7 +10,7 @@ async function getDashboardData(userId: string): Promise<{
   stats: DashboardStats
   recentSearches: SearchType[]
 }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
 
   const [
     { count: totalLeads },
@@ -61,7 +61,7 @@ async function getDashboardData(userId: string): Promise<{
 }
 
 export default async function DashboardPage() {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
     data: { session },
   } = await supabase.auth.getSession()

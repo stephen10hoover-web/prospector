@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getOrCreateAudit } from '@/lib/audit-generator'
 import { atomicCheckAndIncrement, getUserPlan } from '@/lib/usage'
+import { isUUID } from '@/lib/validate'
 
 const FREE_AUDIT_LIMIT = 10
 
@@ -10,15 +11,16 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isUUID(params.id)) return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
 
   const { data: report } = await supabase
     .from('audit_reports')
     .select('content, share_token, generated_at')
     .eq('business_id', params.id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user!.id)
     .maybeSingle()
 
   if (!report) return NextResponse.json({ report: null })
@@ -29,16 +31,17 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const plan = await getUserPlan(session.user.id)
+    const plan = await getUserPlan(user!.id)
     if (plan !== 'pro') {
+      // Use dedicated audit counter — keeps audit and outreach generation limits independent
       const limitResult = await atomicCheckAndIncrement(
-        session.user.id,
-        'outreach_generated_count',
+        user!.id,
+        'audit_generated_count',
         FREE_AUDIT_LIMIT
       )
       if (!limitResult.allowed) {
@@ -48,7 +51,7 @@ export async function POST(
         )
       }
     }
-    const result = await getOrCreateAudit(params.id, session.user.id)
+    const result = await getOrCreateAudit(params.id, user!.id)
     return NextResponse.json(result)
   } catch (err) {
     console.error('Audit generation error:', err)

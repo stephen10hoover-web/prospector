@@ -112,6 +112,8 @@ export async function searchBusinesses(params: {
   url.searchParams.set('q', query)
   url.searchParams.set('type', 'search')
   url.searchParams.set('hl', 'en')
+  // SerpAPI does not support Authorization headers — key must be a query param.
+  // Ensure server-side request logs are not forwarded to third parties.
   url.searchParams.set('api_key', apiKey)
 
   console.log('[business-discovery] Calling SerpAPI:', query)

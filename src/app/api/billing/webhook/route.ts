@@ -27,6 +27,19 @@ export async function POST(request: NextRequest) {
 
   const adminClient = createAdminClient()
 
+  // Idempotency guard — skip events we've already processed.
+  // Stripe retries webhooks on 5xx or timeouts, so duplicate delivery is normal.
+  const { data: existing } = await adminClient
+    .from('processed_webhook_events')
+    .select('id')
+    .eq('event_id', event.id)
+    .maybeSingle()
+
+  if (existing) {
+    // Already handled — acknowledge without re-processing
+    return NextResponse.json({ received: true })
+  }
+
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -97,9 +110,15 @@ export async function POST(request: NextRequest) {
         break
       }
     }
+    // Mark event as processed AFTER successful handling.
+    // If the handler throws, we do NOT mark it processed — Stripe will retry and we'll handle it again.
+    await adminClient
+      .from('processed_webhook_events')
+      .insert({ event_id: event.id, event_type: event.type })
   } catch (error) {
     console.error('Webhook handler error:', error)
-    // Return 200 so Stripe doesn't retry — error is logged internally
+    // Return 500 so Stripe retries — the idempotency check above prevents double-processing
+    return NextResponse.json({ error: 'Handler error' }, { status: 500 })
   }
 
   return NextResponse.json({ received: true })

@@ -8,7 +8,7 @@ import { Plus, Zap, Users, CheckCircle, Clock } from 'lucide-react'
 import { DeleteSequenceButton } from '@/components/sequences/DeleteSequenceButton'
 
 export default async function SequencesPage() {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
 

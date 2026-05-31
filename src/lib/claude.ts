@@ -3,10 +3,20 @@ import type { Business, OutreachEmail } from '@/types'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-// Strip control characters and truncate to prevent prompt injection via business data
+// Sanitize business data before embedding in AI prompts.
+// Removes control characters, zero-width/invisible Unicode, CRLF sequences,
+// and characters that could be used for prompt injection (backticks, angle brackets).
 function sanitize(value: string | null | undefined, maxLen: number): string {
   if (!value) return ''
-  return value.replace(/[\x00-\x1F\x7F]/g, ' ').slice(0, maxLen).trim()
+  return value
+    // Strip ASCII control chars (includes \r \n \t)
+    .replace(/[\x00-\x1F\x7F]/g, ' ')
+    // Strip zero-width and invisible Unicode characters
+    .replace(/[​-‏‪-‮⁠-⁯﻿]/g, '')
+    // Strip characters commonly used for prompt injection
+    .replace(/[`<>]/g, '')
+    .slice(0, maxLen)
+    .trim()
 }
 
 const OUTREACH_SYSTEM_PROMPT = `You are an expert cold email specialist who writes highly personalized, conversion-focused outreach emails for digital marketing and web development agencies.

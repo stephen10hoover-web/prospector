@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Blue rounded square background -->
+  <rect width="32" height="32" rx="7" fill="#3b82f6"/>
+  <!-- White map pin (scaled lucide MapPin, centered) -->
+  <g transform="translate(7, 5) scale(0.75)">
+    <path d="M20 10c0 6-8 13-8 13S4 16 4 10a8 8 0 0 1 16 0Z" fill="white"/>
+    <circle cx="12" cy="10" r="3" fill="#3b82f6"/>
+  </g>
+</svg>

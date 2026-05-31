@@ -7,12 +7,12 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -20,7 +20,7 @@ export async function GET(
       .from('searches')
       .select('id, status, result_count')
       .eq('id', params.id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user!.id)
       .single()
 
     if (error || !search) {

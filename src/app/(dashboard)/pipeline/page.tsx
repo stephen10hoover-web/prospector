@@ -6,7 +6,7 @@ import { Search, Kanban } from 'lucide-react'
 import type { Business } from '@/types'
 
 export default async function PipelinePage() {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
 

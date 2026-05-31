@@ -14,12 +14,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Billing not configured' }, { status: 503 })
   }
 
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+    } = await supabase.auth.getUser()
 
-  if (!session) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -34,15 +34,16 @@ export async function POST(request: NextRequest) {
     const { data: sub } = await adminClient
       .from('subscriptions')
       .select('stripe_customer_id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user!.id)
       .single()
 
     let customerId = sub?.stripe_customer_id
 
     if (!customerId) {
-      customerId = await getOrCreateCustomer(session.user.id, session.user.email ?? '')
+      customerId = await getOrCreateCustomer(user!.id, user.email ?? '')
+      // Upsert subscription row with customer ID
       await adminClient.from('subscriptions').upsert({
-        user_id: session.user.id,
+        user_id: user!.id,
         stripe_customer_id: customerId,
         plan: 'free_trial',
         status: 'trialing',
@@ -51,7 +52,8 @@ export async function POST(request: NextRequest) {
 
     const url = await createCheckoutSession({
       customerId,
-      userId: session.user.id,
+      userId: user!.id,
+      userEmail: user.email ?? '',
       planId,
       returnUrl: appUrl,
     })
@@ -59,6 +61,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ url })
   } catch (error) {
     console.error('Checkout error:', error)
-    return NextResponse.json({ error: 'Failed to create checkout session' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create checkout user' }, { status: 500 })
   }
 }

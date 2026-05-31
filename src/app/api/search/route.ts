@@ -18,10 +18,10 @@ const searchSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient()
-    const { data: { session } } = await supabase.auth.getSession()
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const { category, location, radius } = parsed.data
 
     // Resolve plan — needed for both mile limit and search limit
-    const planStatus = await getUserPlanStatus(session.user.id)
+    const planStatus = await getUserPlanStatus(user!.id)
 
     if (planStatus.isExpired) {
       return NextResponse.json(
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Atomic search limit check + increment (prevents TOCTOU races)
     const limitResult = await atomicCheckAndIncrement(
-      session.user.id,
+      user!.id,
       'searches_count',
       limits.searchLimit,
       period
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     const { data: search, error: searchError } = await adminClient
       .from('searches')
-      .insert({ user_id: session.user.id, category, location, radius, result_count: 0, status: 'processing' })
+      .insert({ user_id: user?.id, category, location, radius, result_count: 0, status: 'processing' })
       .select()
       .single()
 
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
 
           return {
             search_id: search.id,
-            user_id: session.user.id,
+            user_id: user?.id,
             name: biz.name,
             category: biz.category,
             address: biz.address,

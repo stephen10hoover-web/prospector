@@ -3,10 +3,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { z } from 'zod'
 
+// Reject CRLF in subject — prevents email header injection
+const noCRLF = (val: string) => !/[\r\n]/.test(val)
+
 const stepSchema = z.object({
   step_number: z.number().int().min(1),
   delay_days: z.number().int().min(0).max(90),
-  subject: z.string().min(1).max(200),
+  subject: z.string().min(1).max(200).refine(noCRLF, {
+    message: 'Subject must not contain line breaks',
+  }),
   body: z.string().min(1).max(5000),
 })
 
@@ -17,9 +22,9 @@ const createSchema = z.object({
 })
 
 export async function GET(request: NextRequest) {
-  const supabase = createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const admin = createAdminClient()
 
@@ -27,12 +32,12 @@ export async function GET(request: NextRequest) {
     admin
       .from('sequences')
       .select('*, sequence_steps(id, step_number, delay_days, subject)')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user?.id)
       .order('created_at', { ascending: false }),
     admin
       .from('sequence_enrollments')
       .select('sequence_id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user?.id)
       .eq('status', 'active'),
   ])
 
@@ -51,9 +56,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
   const parsed = createSchema.safeParse(body)
@@ -66,7 +71,7 @@ export async function POST(request: NextRequest) {
 
   const { data: sequence, error: seqError } = await admin
     .from('sequences')
-    .insert({ user_id: session.user.id, name, description: description ?? null })
+    .insert({ user_id: user?.id, name, description: description ?? null })
     .select()
     .single()
 

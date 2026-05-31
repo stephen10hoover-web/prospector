@@ -2,9 +2,11 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { sendOutreachEmail } from '@/lib/resend'
-import { checkEmailLimit, incrementUsage } from '@/lib/usage'
+import { atomicCheckAndIncrement, getUserPlan } from '@/lib/usage'
+import { FREE_LIMITS } from '@/lib/stripe'
 import { createTrackingToken, buildTrackingPixelUrl } from '@/lib/email-tracking'
 import { createAdminClient } from '@/lib/supabase-server'
+import { isUUID } from '@/lib/validate'
 import { z } from 'zod'
 
 const sendSchema = z.object({
@@ -18,22 +20,29 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    if (!isUUID(params.id)) {
+      return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
+    }
 
-    // Usage gate
-    const limitCheck = await checkEmailLimit(session.user.id)
-    if (!limitCheck.allowed) {
-      return NextResponse.json(
-        { error: limitCheck.message, upgrade: true, current: limitCheck.current, limit: limitCheck.limit },
-        { status: 402 }
-      )
+    // Atomic usage gate — single DB round-trip that checks AND increments together.
+    // Prevents TOCTOU race where concurrent requests all read count=0 before any increment lands.
+    const plan = await getUserPlan(user!.id)
+    if (plan !== 'pro') {
+      const limitResult = await atomicCheckAndIncrement(user!.id, 'emails_sent_count', FREE_LIMITS.emails)
+      if (!limitResult.allowed) {
+        return NextResponse.json(
+          { error: `Monthly email limit reached. Upgrade to Pro for unlimited outreach.`, upgrade: true },
+          { status: 402 }
+        )
+      }
     }
 
     const body = await request.json()
@@ -52,6 +61,7 @@ export async function POST(
     const { data: suppressed } = await adminDb
       .from('email_suppressions')
       .select('email')
+      .eq('user_id', user!.id)
       .eq('email', to.toLowerCase())
       .maybeSingle()
 
@@ -62,25 +72,16 @@ export async function POST(
       )
     }
 
-    const [businessResult, profileResult] = await Promise.all([
-      supabase
-        .from('businesses')
-        .select('name')
-        .eq('id', params.id)
-        .eq('user_id', session.user.id)
-        .single(),
-      adminDb
-        .from('user_profiles')
-        .select('sending_email, physical_address')
-        .eq('id', session.user.id)
-        .maybeSingle(),
-    ])
+    const { data: business, error: fetchError } = await supabase
+      .from('businesses')
+      .select('name')
+      .eq('id', params.id)
+      .eq('user_id', user!.id)
+      .single()
 
-    if (businessResult.error || !businessResult.data) {
+    if (fetchError || !business) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
-    const business = businessResult.data
-    const profile = profileResult.data
 
     // Pre-insert log so we can attach tracking token to it
     const admin = createAdminClient()
@@ -88,7 +89,7 @@ export async function POST(
       .from('outreach_logs')
       .insert({
         business_id: params.id,
-        user_id: session.user.id,
+        user_id: user!.id,
         type: 'email',
         subject,
         body: emailBody,
@@ -102,9 +103,15 @@ export async function POST(
       ? await createTrackingToken({
           outreachLogId: logRow.id,
           businessId: params.id,
-          userId: session.user.id,
+          userId: user!.id,
         })
       : null
+
+    const { data: senderProfile } = await adminDb
+      .from('profiles')
+      .select('full_name, company_name, mailing_address')
+      .eq('id', user!.id)
+      .maybeSingle()
 
     const result = await sendOutreachEmail({
       to,
@@ -112,35 +119,39 @@ export async function POST(
       body: emailBody,
       businessName: business.name,
       businessId: params.id,
-      userId: session.user.id,
-      fromEmail: profile?.sending_email ?? null,
-      physicalAddress: profile?.physical_address ?? null,
+      userId: user!.id,
       trackingPixelUrl: token ? buildTrackingPixelUrl(token) : undefined,
+      senderName: senderProfile?.full_name ?? undefined,
+      senderCompany: senderProfile?.company_name ?? undefined,
+      senderAddress: senderProfile?.mailing_address ?? undefined,
     })
 
     await supabase
       .from('businesses')
       .update({ outreach_status: 'sent' })
       .eq('id', params.id)
-
-    await incrementUsage(session.user.id, 'emails_sent_count')
+      .eq('user_id', user!.id)
 
     return NextResponse.json({ success: true, messageId: result.id })
   } catch (error) {
     console.error('Send error:', error)
 
-    const supabase = createServerClient()
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    try {
+      const supabase = await createServerClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
-    if (session) {
-      await supabase.from('outreach_logs').insert({
-        business_id: params.id,
-        user_id: session.user.id,
-        type: 'email',
-        status: 'failed',
-      })
+      if (user) {
+        await supabase.from('outreach_logs').insert({
+          business_id: params.id,
+          user_id: user!.id,
+          type: 'email',
+          status: 'failed',
+        })
+      }
+    } catch {
+      // best-effort failure log
     }
 
     return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })

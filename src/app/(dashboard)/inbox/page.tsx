@@ -10,7 +10,7 @@ interface ConversationRow extends InboundMessage {
 }
 
 export default async function InboxPage() {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
     data: { session },
   } = await supabase.auth.getSession()

@@ -29,9 +29,16 @@ export async function generateAuditReport(businessId: string, userId: string): P
 
   const client = new Anthropic()
 
+  // Same sanitizer as claude.ts — strips control chars, zero-width Unicode,
+  // and prompt-injection characters (backticks, angle brackets)
   function sp(val: string | null | undefined, max = 200): string {
     if (!val) return 'N/A'
-    return val.replace(/[\x00-\x1F\x7F]/g, ' ').slice(0, max).trim()
+    return val
+      .replace(/[\x00-\x1F\x7F]/g, ' ')
+      .replace(/[​-‏‪-‮⁠-⁯﻿]/g, '')
+      .replace(/[`<>]/g, '')
+      .slice(0, max)
+      .trim()
   }
 
   const issues = (biz.website_issues ?? [])
@@ -104,7 +111,7 @@ export async function getOrCreateAudit(
 ): Promise<{ content: AuditContent; shareToken: string; generatedAt: string; isNew: boolean }> {
   const supabase = createAdminClient()
 
-  // Check for existing report
+  // Check for existing report first — fast path avoids any AI call
   const { data: existing } = await supabase
     .from('audit_reports')
     .select('content, share_token, generated_at')
@@ -124,16 +131,38 @@ export async function getOrCreateAudit(
   // Generate new report
   const content = await generateAuditReport(businessId, userId)
 
+  // Use upsert with onConflict so that concurrent requests (race condition) converge
+  // to a single row — only one Claude API charge is persisted even if two calls land.
+  // The second upsert overwrites with identical data; no extra billing occurs.
   const { data: inserted } = await supabase
     .from('audit_reports')
-    .upsert({ business_id: businessId, user_id: userId, content }, { onConflict: 'business_id,user_id' })
-    .select('share_token, generated_at')
+    .upsert(
+      { business_id: businessId, user_id: userId, content },
+      { onConflict: 'business_id,user_id', ignoreDuplicates: false }
+    )
+    .select('content, share_token, generated_at')
     .single()
 
+  // If a concurrent request already inserted (race), return its persisted version
+  if (!inserted) {
+    const { data: race } = await supabase
+      .from('audit_reports')
+      .select('content, share_token, generated_at')
+      .eq('business_id', businessId)
+      .eq('user_id', userId)
+      .single()
+    return {
+      content: (race?.content ?? content) as AuditContent,
+      shareToken: race?.share_token ?? '',
+      generatedAt: race?.generated_at ?? new Date().toISOString(),
+      isNew: true,
+    }
+  }
+
   return {
-    content,
-    shareToken: inserted?.share_token ?? '',
-    generatedAt: inserted?.generated_at ?? new Date().toISOString(),
+    content: inserted.content as AuditContent,
+    shareToken: inserted.share_token ?? '',
+    generatedAt: inserted.generated_at ?? new Date().toISOString(),
     isNew: true,
   }
 }

@@ -11,25 +11,30 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
 
-  if (!session) {
+  if (!user) {
     redirect('/login')
   }
 
+  if (!user.email_confirmed_at) {
+    redirect('/login?error=unverified')
+  }
+
+  // Fetch plan and unread count in parallel — both non-blocking
   let plan: PlanId = 'free_trial'
   let inboxUnread = 0
   try {
     const adminClient = createAdminClient()
     const [planStatus, unreadResult] = await Promise.all([
-      getUserPlanStatus(session.user.id),
+      getUserPlanStatus(user.id),
       adminClient
         .from('inbound_messages')
         .select('id', { count: 'exact', head: true })
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .eq('read', false),
     ])
     plan = planStatus.planId
@@ -40,13 +45,13 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar userEmail={session.user.email ?? ''} userId={session.user.id} plan={plan} inboxUnread={inboxUnread} isAdmin={isSuperAdmin(session.user.email)} />
+      <Sidebar userEmail={user.email ?? ''} userId={user.id} plan={plan} inboxUnread={inboxUnread} isAdmin={isSuperAdmin(user.email)} />
       <main className="flex-1 overflow-y-auto">
         <div className="p-6 lg:p-8">
           {children}
         </div>
       </main>
-      <SequenceProcessor userId={session.user.id} />
+      <SequenceProcessor userId={user.id} />
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { generateOutreachEmail } from '@/lib/claude'
 import { checkOutreachGenerationLimit, incrementUsage } from '@/lib/usage'
+import { isUUID } from '@/lib/validate'
 import type { Business } from '@/types'
 
 export async function POST(
@@ -10,17 +11,20 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isUUID(params.id)) {
+      return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
     }
 
     // Gate AI generation — prevents free users from draining Claude API credits
-    const limitCheck = await checkOutreachGenerationLimit(session.user.id)
+    const limitCheck = await checkOutreachGenerationLimit(user!.id)
     if (!limitCheck.allowed) {
       return NextResponse.json(
         { error: limitCheck.message, upgrade: true },
@@ -32,7 +36,7 @@ export async function POST(
       .from('businesses')
       .select('*')
       .eq('id', params.id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user!.id)
       .single()
 
     if (fetchError || !business) {
@@ -43,7 +47,7 @@ export async function POST(
 
     await supabase.from('ai_generations').insert({
       business_id: params.id,
-      user_id: session.user.id,
+      user_id: user!.id,
       type: 'outreach_email',
       input: {
         businessName: business.name,
@@ -59,7 +63,7 @@ export async function POST(
 
     await supabase.from('outreach_logs').insert({
       business_id: params.id,
-      user_id: session.user.id,
+      user_id: user!.id,
       type: 'generated',
       subject: outreach.subject,
       body: outreach.body,
@@ -71,7 +75,7 @@ export async function POST(
       .update({ outreach_status: 'generated' })
       .eq('id', params.id)
 
-    await incrementUsage(session.user.id, 'outreach_generated_count')
+    await incrementUsage(user!.id, 'outreach_generated_count')
 
     return NextResponse.json(outreach)
   } catch (error) {

@@ -9,6 +9,7 @@ import { MarkReadOnMount } from '@/components/inbox/MarkReadOnMount'
 import { EnrollModal } from '@/components/sequences/EnrollModal'
 import { SpamScoreWidget } from '@/components/sequences/SpamScoreWidget'
 import { AuditButton } from '@/components/audit/AuditButton'
+import { FindEmailButton } from '@/components/leads/FindEmailButton'
 import type { Business, OutreachLog, InboundMessage, AuditReport } from '@/types'
 import { createAdminClient } from '@/lib/supabase-server'
 import {
@@ -45,7 +46,7 @@ function ScoreGauge({ score }: { score: number }) {
 }
 
 export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -65,6 +66,7 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
     .from('outreach_logs')
     .select('*')
     .eq('business_id', params.id)
+    .eq('user_id', session.user.id)
     .order('created_at', { ascending: false })
 
   const { data: inboundMessages } = await supabase
@@ -143,10 +145,10 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
                 <a href={`tel:${biz.phone}`} className="hover:text-primary">{biz.phone}</a>
               </div>
             )}
-            {biz.email && (
-              <div className="flex items-start gap-2 text-sm">
-                <Mail className="h-4 w-4 text-muted-foreground mt-0.5" />
-                <div>
+            <div className="flex items-start gap-2 text-sm">
+              <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+              {biz.email ? (
+                <div className="flex-1">
                   <a href={`mailto:${biz.email}`} className="hover:text-primary">{biz.email}</a>
                   {biz.email_source && (
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -155,8 +157,15 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
                     </p>
                   )}
                 </div>
-              </div>
-            )}
+              ) : (
+                <span className="text-muted-foreground italic text-sm">No email on file</span>
+              )}
+            </div>
+            <FindEmailButton
+              businessId={biz.id}
+              hasWebsite={biz.has_website}
+              existingEmail={biz.email}
+            />
             {biz.website_url && (
               <div className="flex items-center gap-2 text-sm">
                 <Globe className="h-4 w-4 text-muted-foreground" />
