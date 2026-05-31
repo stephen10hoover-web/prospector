@@ -18,8 +18,9 @@ const statusSchema = z.object({
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const supabase = await createServerClient()
     const {
@@ -29,7 +30,7 @@ export async function PATCH(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (!isUUID(params.id)) {
+    if (!isUUID(id)) {
       return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
     }
 
@@ -45,7 +46,7 @@ export async function PATCH(
     const { data: updated, error } = await supabase
       .from('businesses')
       .update({ outreach_status: parsed.data.status })
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('user_id', user!.id)
       .select()
       .single()

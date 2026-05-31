@@ -7,8 +7,9 @@ import { isUUID } from '@/lib/validate'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const supabase = await createServerClient()
     const {
@@ -18,14 +19,14 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (!isUUID(params.id)) {
+    if (!isUUID(id)) {
       return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
     }
 
     const { data: business, error: fetchError } = await supabase
       .from('businesses')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('user_id', user!.id)
       .single()
 
@@ -48,7 +49,7 @@ export async function POST(
         website_issues: websiteAnalysis.issues,
         lead_score: leadScore,
       })
-      .eq('id', params.id)
+      .eq('id', id)
       .select()
       .single()
 

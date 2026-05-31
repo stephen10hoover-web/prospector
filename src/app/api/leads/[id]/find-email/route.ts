@@ -10,17 +10,18 @@ const FREE_EMAIL_FIND_LIMIT = 20
 
 export async function POST(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!isUUID(params.id)) return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
+  if (!isUUID(id)) return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
 
   const { data: business } = await supabase
     .from('businesses')
     .select('id, website_url')
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user!.id)
     .single()
 
@@ -55,7 +56,7 @@ export async function POST(
       email_source: result.source,
       email_confidence: result.confidence,
     })
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user!.id)
 
   return NextResponse.json({ email: result.email, confidence: result.confidence, source: result.source })

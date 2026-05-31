@@ -16,12 +16,13 @@ const schema = z.object({
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!isUUID(params.id)) return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
+  if (!isUUID(id)) return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
 
   const body = await request.json()
   const parsed = schema.safeParse(body)
@@ -30,7 +31,7 @@ export async function PATCH(
   const { error } = await supabase
     .from('businesses')
     .update({ pipeline_stage: parsed.data.stage })
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user!.id)
 
   if (error) {

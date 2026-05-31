@@ -9,17 +9,18 @@ const FREE_AUDIT_LIMIT = 10
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!isUUID(params.id)) return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
+  if (!isUUID(id)) return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
 
   const { data: report } = await supabase
     .from('audit_reports')
     .select('content, share_token, generated_at')
-    .eq('business_id', params.id)
+    .eq('business_id', id)
     .eq('user_id', user!.id)
     .maybeSingle()
 
@@ -29,8 +30,9 @@ export async function GET(
 
 export async function POST(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -51,7 +53,7 @@ export async function POST(
         )
       }
     }
-    const result = await getOrCreateAudit(params.id, user!.id)
+    const result = await getOrCreateAudit(id, user!.id)
     return NextResponse.json(result)
   } catch (err) {
     console.error('Audit generation error:', err)

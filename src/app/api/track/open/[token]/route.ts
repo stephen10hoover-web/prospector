@@ -11,12 +11,13 @@ const TRANSPARENT_GIF = Buffer.from(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
+  const { token } = await params
   const ua = request.headers.get('user-agent')
 
   // Record open in background — never block the pixel response
-  waitUntil(recordOpenEvent(params.token, ua))
+  waitUntil(recordOpenEvent(token, ua))
 
   return new Response(TRANSPARENT_GIF, {
     status: 200,

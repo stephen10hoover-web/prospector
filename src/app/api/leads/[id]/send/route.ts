@@ -17,8 +17,9 @@ const sendSchema = z.object({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const supabase = await createServerClient()
     const {
@@ -28,7 +29,7 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (!isUUID(params.id)) {
+    if (!isUUID(id)) {
       return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
     }
 
@@ -78,7 +79,7 @@ export async function POST(
     const { data: business, error: fetchError } = await supabase
       .from('businesses')
       .select('name')
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('user_id', user!.id)
       .single()
 
@@ -91,7 +92,7 @@ export async function POST(
     const { data: logRow } = await admin
       .from('outreach_logs')
       .insert({
-        business_id: params.id,
+        business_id: id,
         user_id: user!.id,
         type: 'email',
         subject,
@@ -105,7 +106,7 @@ export async function POST(
     const token = logRow
       ? await createTrackingToken({
           outreachLogId: logRow.id,
-          businessId: params.id,
+          businessId: id,
           userId: user!.id,
         })
       : null
@@ -121,7 +122,7 @@ export async function POST(
       subject,
       body: emailBody,
       businessName: business.name,
-      businessId: params.id,
+      businessId: id,
       userId: user!.id,
       trackingPixelUrl: token ? buildTrackingPixelUrl(token) : undefined,
       senderName: senderProfile?.full_name ?? undefined,
@@ -132,7 +133,7 @@ export async function POST(
     await supabase
       .from('businesses')
       .update({ outreach_status: 'sent' })
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('user_id', user!.id)
 
     return NextResponse.json({ success: true, messageId: result.id })
@@ -147,7 +148,7 @@ export async function POST(
 
       if (user) {
         await supabase.from('outreach_logs').insert({
-          business_id: params.id,
+          business_id: id,
           user_id: user!.id,
           type: 'email',
           status: 'failed',

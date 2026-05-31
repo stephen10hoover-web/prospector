@@ -8,8 +8,9 @@ import type { Business } from '@/types'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const supabase = await createServerClient()
     const {
@@ -19,7 +20,7 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (!isUUID(params.id)) {
+    if (!isUUID(id)) {
       return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 })
     }
 
@@ -35,7 +36,7 @@ export async function POST(
     const { data: business, error: fetchError } = await supabase
       .from('businesses')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('user_id', user!.id)
       .single()
 
@@ -46,7 +47,7 @@ export async function POST(
     const outreach = await generateOutreachEmail(business as Business)
 
     await supabase.from('ai_generations').insert({
-      business_id: params.id,
+      business_id: id,
       user_id: user!.id,
       type: 'outreach_email',
       input: {
@@ -62,7 +63,7 @@ export async function POST(
     })
 
     await supabase.from('outreach_logs').insert({
-      business_id: params.id,
+      business_id: id,
       user_id: user!.id,
       type: 'generated',
       subject: outreach.subject,
@@ -73,7 +74,7 @@ export async function POST(
     await supabase
       .from('businesses')
       .update({ outreach_status: 'generated' })
-      .eq('id', params.id)
+      .eq('id', id)
 
     await incrementUsage(user!.id, 'outreach_generated_count')
 

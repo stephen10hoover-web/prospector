@@ -4,8 +4,9 @@ import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 
 export async function POST(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await createServerClient()
   const {
     data: { user },
@@ -19,7 +20,7 @@ export async function POST(
   const { data: business } = await admin
     .from('businesses')
     .select('id')
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user!.id)
     .maybeSingle()
 
@@ -30,7 +31,7 @@ export async function POST(
   await admin
     .from('inbound_messages')
     .update({ read: true })
-    .eq('business_id', params.id)
+    .eq('business_id', id)
     .eq('user_id', user!.id)
 
   return NextResponse.json({ ok: true })

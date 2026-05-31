@@ -4,8 +4,9 @@ import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -14,7 +15,7 @@ export async function DELETE(
   const { error } = await admin
     .from('sequences')
     .delete()
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user!.id)
 
   if (error) {
