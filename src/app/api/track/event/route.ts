@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   const { event_name, session_id, anonymous_id, properties, url, referrer } = parsed.data
 
   // Try to resolve user from session — not required
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data: { session } } = await supabase.auth.getSession()
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null

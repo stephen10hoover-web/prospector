@@ -60,7 +60,7 @@ interface AdminContext {
  * On success: returns the verified session + request metadata.
  */
 export async function requireSuperAdmin(label?: string): Promise<AdminContext> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -97,7 +97,7 @@ type AdminVerifyResult =
  * Returns a discriminated union — check `result.ok` before proceeding.
  */
 export async function verifyAdminRequest(request: Request): Promise<AdminVerifyResult> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const {
     data: { session },
   } = await supabase.auth.getSession()
