@@ -105,7 +105,7 @@ export async function GET(request: Request) {
   }
 
   if (code) {
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     const supabase = createSSRClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -137,7 +137,7 @@ export async function GET(request: Request) {
           .eq('user_id', userId)
 
         if (count === 0) {
-          const reqHeaders = headers()
+          const reqHeaders = await headers()
           const ip = reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
             ?? reqHeaders.get('x-real-ip')
             ?? null

@@ -65,7 +65,7 @@ export async function requireSuperAdmin(label?: string): Promise<AdminContext> {
     data: { session },
   } = await supabase.auth.getSession()
 
-  const reqHeaders = headers()
+  const reqHeaders = await headers()
   const ip = reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   const userAgent = reqHeaders.get('user-agent') ?? 'unknown'
 

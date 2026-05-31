@@ -25,10 +25,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const reqHeaders = headers()
+    const reqHeaders = await headers()
     const origin = reqHeaders.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
 
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     const supabase = createSSRClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

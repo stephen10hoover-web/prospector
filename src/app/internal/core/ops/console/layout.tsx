@@ -16,7 +16,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // Full session + email verification — redirects to /login if not super-admin
   const { session, ip, userAgent } = await requireSuperAdmin('admin_layout')
 
-  const reqHeaders = headers()
+  const reqHeaders = await headers()
   const pathname = reqHeaders.get('x-invoke-path') ?? ''
 
   await logAuditEvent({
