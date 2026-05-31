@@ -53,7 +53,6 @@ export async function POST(request: NextRequest) {
     const url = await createCheckoutSession({
       customerId,
       userId: user!.id,
-      userEmail: user.email ?? '',
       planId,
       returnUrl: appUrl,
     })
