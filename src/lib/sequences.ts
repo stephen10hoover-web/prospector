@@ -180,7 +180,7 @@ async function processEnrollment(
     businessId: business.id,
     userId,
     fromEmail: profile.sending_email,
-    senderAddress: profile.physical_address,
+    senderAddress: profile.physical_address ?? undefined,
     trackingPixelUrl: token ? buildTrackingPixelUrl(token) : undefined,
   })
 
