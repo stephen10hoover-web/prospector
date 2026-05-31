@@ -1,8 +1,8 @@
 import { createAdminClient } from './supabase-server'
 import { sendOutreachEmail } from './resend'
 import { createTrackingToken, buildTrackingPixelUrl } from './email-tracking'
-import { atomicCheckAndIncrement, getUserPlan } from './usage'
-import { FREE_LIMITS } from './stripe'
+import { atomicCheckAndIncrement, getUserPlan, getUserPlanStatus, periodForPlan } from './usage'
+import { PLAN_LIMITS } from './plans'
 
 const BATCH_SIZE = 50
 
@@ -126,9 +126,12 @@ async function processEnrollment(
 
   // Enforce per-user monthly email limit before spending Resend quota.
   // Pro users are unlimited; free users share the same cap as manual sends.
-  const plan = await getUserPlan(userId)
+  const planStatus = await getUserPlanStatus(userId)
+  const plan = planStatus.planId
   if (plan !== 'pro') {
-    const limitResult = await atomicCheckAndIncrement(userId, 'emails_sent_count', FREE_LIMITS.emails)
+    const emailLimit = PLAN_LIMITS[plan].emailLimit
+    const period = periodForPlan(plan)
+    const limitResult = await atomicCheckAndIncrement(userId, 'emails_sent_count', emailLimit, period)
     if (!limitResult.allowed) {
       // Pause the enrollment rather than silently dropping — user can resume after upgrading
       await supabase

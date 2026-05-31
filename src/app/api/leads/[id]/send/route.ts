@@ -2,8 +2,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { sendOutreachEmail } from '@/lib/resend'
-import { atomicCheckAndIncrement, getUserPlan } from '@/lib/usage'
-import { FREE_LIMITS } from '@/lib/stripe'
+import { atomicCheckAndIncrement, getUserPlan, getUserPlanStatus, periodForPlan } from '@/lib/usage'
+import { PLAN_LIMITS } from '@/lib/plans'
 import { createTrackingToken, buildTrackingPixelUrl } from '@/lib/email-tracking'
 import { createAdminClient } from '@/lib/supabase-server'
 import { isUUID } from '@/lib/validate'
@@ -34,9 +34,12 @@ export async function POST(
 
     // Atomic usage gate — single DB round-trip that checks AND increments together.
     // Prevents TOCTOU race where concurrent requests all read count=0 before any increment lands.
-    const plan = await getUserPlan(user!.id)
+    const planStatus = await getUserPlanStatus(user!.id)
+    const plan = planStatus.planId
     if (plan !== 'pro') {
-      const limitResult = await atomicCheckAndIncrement(user!.id, 'emails_sent_count', FREE_LIMITS.emails)
+      const emailLimit = PLAN_LIMITS[plan].emailLimit
+      const period = periodForPlan(plan)
+      const limitResult = await atomicCheckAndIncrement(user!.id, 'emails_sent_count', emailLimit, period)
       if (!limitResult.allowed) {
         return NextResponse.json(
           { error: `Monthly email limit reached. Upgrade to Pro for unlimited outreach.`, upgrade: true },
