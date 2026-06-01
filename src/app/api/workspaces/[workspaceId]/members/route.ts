@@ -35,7 +35,21 @@ export async function GET(
     .eq('workspace_id', workspaceId)
     .order('created_at')
 
-  return NextResponse.json(members ?? [])
+  // Enrich with emails from auth.users
+  const userIds = (members ?? []).map((m) => m.user_id as string)
+  const { data: { users } } = await admin.auth.admin.listUsers()
+  const emailMap: Record<string, string> = {}
+  for (const u of users) {
+    if (userIds.includes(u.id)) emailMap[u.id] = u.email ?? u.id
+  }
+
+  const enriched = (members ?? []).map((m) => ({
+    ...m,
+    email: emailMap[m.user_id as string] ?? (m.user_id as string),
+    is_self: m.user_id === user!.id,
+  }))
+
+  return NextResponse.json(enriched)
 }
 
 export async function POST(
@@ -87,8 +101,6 @@ export async function POST(
   if (error) {
     return NextResponse.json({ error: 'Failed to create invite' }, { status: 500 })
   }
-
-  // TODO: send invite email via Resend
 
   return NextResponse.json({ invite, invite_url: `/workspaces/accept/${token}` }, { status: 201 })
 }
