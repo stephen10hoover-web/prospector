@@ -11,8 +11,7 @@ import type { Business } from '@/types'
 
 const PAGE_SIZE = 100
 
-interface LeadsPageProps {
-  searchParams: {
+type SearchParams = {
     category?: string
     city?: string
     status?: string
@@ -21,11 +20,14 @@ interface LeadsPageProps {
     search_id?: string
     page?: string
   }
+
+interface LeadsPageProps {
+  searchParams: Promise<SearchParams>
 }
 
 async function getLeads(
   userId: string,
-  filters: LeadsPageProps['searchParams']
+  filters: SearchParams
 ): Promise<{ leads: Business[]; total: number }> {
   const supabase = await createServerClient()
   const page = Math.max(1, parseInt(filters.page ?? '1'))
@@ -50,16 +52,15 @@ async function getLeads(
   return { leads: (data as Business[]) ?? [], total: count ?? 0 }
 }
 
-export default async function LeadsPage({ searchParams }: LeadsPageProps) {
+export default async function LeadsPage({ searchParams: searchParamsPromise }: LeadsPageProps) {
+  const searchParams = await searchParamsPromise
   const supabase = await createServerClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!session) return null
+  if (!user) return null
 
   const page = Math.max(1, parseInt(searchParams.page ?? '1'))
-  const { leads, total } = await getLeads(session.user.id, searchParams)
+  const { leads, total } = await getLeads(user!.id, searchParams)
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (

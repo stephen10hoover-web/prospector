@@ -135,13 +135,13 @@ export default async function SequencesPage() {
 
       <Card className="border-dashed">
         <CardContent className="py-4 px-5">
-          <p className="text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-1">
             <span className="font-medium">Variables you can use in templates:</span>{' '}
             <Badge variant="secondary" className="text-xs font-mono">{'{{name}}'}</Badge>{' '}
             <Badge variant="secondary" className="text-xs font-mono">{'{{city}}'}</Badge>{' '}
             <Badge variant="secondary" className="text-xs font-mono">{'{{state}}'}</Badge>{' '}
             <Badge variant="secondary" className="text-xs font-mono">{'{{category}}'}</Badge>
-          </p>
+          </div>
         </CardContent>
       </Card>
     </div>
