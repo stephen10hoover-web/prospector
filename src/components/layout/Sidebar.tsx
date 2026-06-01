@@ -23,6 +23,7 @@ import {
   Zap,
   BarChart3,
   ShieldAlert,
+  CreditCard,
 } from 'lucide-react'
 
 import type { PlanId } from '@/lib/plans'
@@ -76,6 +77,11 @@ const navItems = [
     label: 'Settings',
     href: '/settings',
     icon: Settings,
+  },
+  {
+    label: 'Pricing',
+    href: '/pricing',
+    icon: CreditCard,
   },
 ]
 

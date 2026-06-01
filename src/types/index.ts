@@ -55,7 +55,10 @@ export interface Subscription {
   plan: import('@/lib/plans').PlanId
   status: 'active' | 'past_due' | 'canceled' | 'trialing' | 'expired'
   current_period_end: string | null
-  stripe_customer_id: string | null
+  // stripe_customer_id is intentionally excluded — it is an internal identifier
+  // that must never be returned to the client. Use /api/billing/status for all
+  // client-facing billing data.
+  cancel_at_period_end: boolean
   trial_days_remaining: number | null
   trial_expires_at: string | null
 }

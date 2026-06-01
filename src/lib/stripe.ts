@@ -21,15 +21,29 @@ export function getPriceIdForPlan(planId: 'pro' | 'team'): string {
   return process.env.STRIPE_TEAM_PRICE_ID
 }
 
-/** Resolve which plan a Stripe price ID maps to. Falls back to 'pro' if unknown. */
+/** Resolve which plan a Stripe price ID maps to. Throws on unknown price IDs
+ *  to surface ENV misconfigurations rather than silently assigning the wrong plan. */
 export function getPlanIdFromPriceId(priceId: string): PlanId {
   if (priceId === process.env.STRIPE_PRO_PRICE_ID) return 'pro'
   if (priceId === process.env.STRIPE_TEAM_PRICE_ID) return 'team'
-  return 'pro'
+  // Unknown price ID — likely a new plan added in Stripe without updating ENV vars.
+  // Log loudly and throw so the webhook returns 500 and Stripe retries rather than
+  // silently assigning the wrong tier.
+  console.error(`[billing] Unknown Stripe price ID: ${priceId}. Check STRIPE_PRO_PRICE_ID and STRIPE_TEAM_PRICE_ID.`)
+  throw new Error(`Unknown Stripe price ID: ${priceId}`)
 }
 
 export async function getOrCreateCustomer(userId: string, email: string): Promise<string> {
   if (!stripe) throw new Error('Stripe not configured')
+
+  // Search for an existing customer first to prevent orphaned Stripe customers
+  // if the DB upsert fails after creation (e.g. Supabase connection error on retry).
+  const existing = await stripe.customers.search({
+    query: `metadata['supabase_user_id']:'${userId}'`,
+    limit: 1,
+  })
+  if (existing.data.length > 0) return existing.data[0].id
+
   const customer = await stripe.customers.create({
     email,
     metadata: { supabase_user_id: userId },

@@ -39,6 +39,7 @@ interface BillingData {
   plan: PlanId
   status: string
   current_period_end: string | null
+  cancel_at_period_end: boolean
   is_expired: boolean
   trial_days_remaining: number | null
   trial_expires_at: string | null
@@ -483,6 +484,12 @@ export default function SettingsPage() {
   const emailUsage = data?.usage.emails_sent_count ?? 0
   const searchLimit = data?.limits.searchLimit ?? 0
   const emailLimit = data?.limits.emailLimit ?? 0
+  const trialDaysRemaining = data?.trial_days_remaining ?? 0
+  const trialIsUrgent = currentPlan === 'free_trial' && !isExpired && trialDaysRemaining <= 3
+  const searchNearLimit = searchLimit > 0 && (searchUsage / searchLimit) >= 0.8
+  const emailNearLimit = emailLimit > 0 && (emailUsage / emailLimit) >= 0.8
+  const cancelAtPeriodEnd = data?.cancel_at_period_end ?? false
+  const subscriptionStatus = data?.status ?? 'trialing'
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -492,7 +499,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Current Plan Status */}
-      <Card className={isExpired ? 'border-destructive' : ''}>
+      <Card className={isExpired ? 'border-destructive' : trialIsUrgent ? 'border-orange-500' : ''}>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -502,19 +509,88 @@ export default function SettingsPage() {
               })()}
               <CardTitle>{planDisplayName(currentPlan)} Plan</CardTitle>
             </div>
-            <Badge variant={isExpired ? 'destructive' : isPaid ? 'default' : 'secondary'}>
-              {isExpired ? 'Expired' : isPaid ? 'Active' : `${data?.trial_days_remaining ?? 0}d left`}
+            <Badge
+              variant={
+                isExpired || subscriptionStatus === 'canceled' || subscriptionStatus === 'past_due'
+                  ? 'destructive'
+                  : trialIsUrgent
+                  ? 'secondary'
+                  : isPaid
+                  ? 'default'
+                  : 'secondary'
+              }
+              className={
+                subscriptionStatus === 'past_due'
+                  ? 'bg-orange-500 hover:bg-orange-500 text-white border-0'
+                  : trialIsUrgent
+                  ? 'bg-orange-500 hover:bg-orange-500 text-white border-0'
+                  : ''
+              }
+            >
+              {isExpired
+                ? 'Expired'
+                : subscriptionStatus === 'canceled'
+                ? 'Canceled'
+                : subscriptionStatus === 'past_due'
+                ? 'Past Due'
+                : subscriptionStatus === 'trialing' || currentPlan === 'free_trial'
+                ? trialIsUrgent
+                  ? `${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} left!`
+                  : `${trialDaysRemaining}d left`
+                : 'Active'}
             </Badge>
           </div>
           <CardDescription>
             {isExpired
               ? 'Your free trial has expired. Upgrade to continue using Prospector.'
               : currentPlan === 'free_trial'
-              ? `Trial ends in ${data?.trial_days_remaining ?? 0} day${data?.trial_days_remaining === 1 ? '' : 's'} — ${data?.limits.mileLimit}mi limit · ${data?.limits.searchLimit} searches/week · ${data?.limits.emailLimit} emails/week`
+              ? `Trial ends in ${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} — ${data?.limits.mileLimit}mi limit · ${data?.limits.searchLimit} searches/week · ${data?.limits.emailLimit} emails/week`
               : `${data?.limits.mileLimit}mi limit · ${data?.limits.searchLimit} searches/mo · ${data?.limits.emailLimit} emails/mo`}
           </CardDescription>
         </CardHeader>
-        {isPaid && (
+
+        {/* Trial urgency banner */}
+        {trialIsUrgent && !isExpired && (
+          <CardContent className="pt-0 pb-3">
+            <div className="rounded-md bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-600 dark:text-orange-400">
+              Only {trialDaysRemaining} day{trialDaysRemaining === 1 ? '' : 's'} left on your trial — upgrade now so you don&apos;t lose access to your lead list and outreach history.
+            </div>
+          </CardContent>
+        )}
+
+        {/* Cancellation loss-framing notice */}
+        {cancelAtPeriodEnd && data?.current_period_end && (
+          <CardContent className="pt-0 pb-3">
+            <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+              <p className="font-semibold">
+                Your subscription cancels on {new Date(data.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+              </p>
+              <p className="mt-1 text-destructive/80">
+                On that date you&apos;ll lose access to your full lead list, all email sequences, saved outreach templates, and your outreach history. Reactivate below to keep everything.
+              </p>
+              <Button size="sm" className="mt-2" onClick={handlePortal} disabled={portaling}>
+                {portaling ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5 mr-1.5" />}
+                Reactivate Subscription
+              </Button>
+            </div>
+          </CardContent>
+        )}
+
+        {/* Past-due notice */}
+        {subscriptionStatus === 'past_due' && (
+          <CardContent className="pt-0 pb-3">
+            <div className="rounded-md bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-600 dark:text-orange-400">
+              <p className="font-semibold">Your last payment failed.</p>
+              <p className="mt-0.5">Update your payment method to keep access to your leads and sequences.</p>
+              <Button size="sm" variant="outline" className="mt-2" onClick={handlePortal} disabled={portaling}>
+                {portaling ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5 mr-1.5" />}
+                Update Payment Method
+              </Button>
+            </div>
+          </CardContent>
+        )}
+
+        {isPaid && !cancelAtPeriodEnd && subscriptionStatus !== 'past_due' && (
           <CardContent>
             <div className="flex items-center gap-3">
               {data?.current_period_end && (
@@ -600,6 +676,66 @@ export default function SettingsPage() {
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* "View full pricing" link */}
+      {!isPaid && (
+        <p className="text-center text-xs text-muted-foreground -mt-2">
+          <a href="/pricing" className="underline hover:text-foreground transition-colors">
+            View full pricing comparison
+          </a>
+        </p>
+      )}
+
+      {/* Near-limit upgrade nudge — shown when usage is ≥80% on a free/trial plan */}
+      {!isPaid && !isExpired && (searchNearLimit || emailNearLimit) && (
+        <div className="rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">You&apos;re almost at your limit</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {searchNearLimit && emailNearLimit
+                ? 'Your searches and emails are nearly used up.'
+                : searchNearLimit
+                ? `${searchUsage} of ${searchLimit} searches used this ${periodLabel}.`
+                : `${emailUsage} of ${emailLimit} emails used this ${periodLabel}.`}
+              {' '}Upgrade now to keep prospecting.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => handleUpgrade('pro')}
+            disabled={upgrading !== null}
+            className="shrink-0"
+          >
+            {upgrading === 'pro' ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <Zap className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            Upgrade Now
+          </Button>
+        </div>
+      )}
+
+      {/* Expired trial upgrade nudge */}
+      {isExpired && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-destructive">Your trial has ended</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Upgrade to Pro to regain access to your {searchUsage} saved leads and outreach history.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => handleUpgrade('pro')}
+            disabled={upgrading !== null}
+            className="shrink-0"
+          >
+            {upgrading === 'pro' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}
+            Upgrade to Pro
+          </Button>
         </div>
       )}
 

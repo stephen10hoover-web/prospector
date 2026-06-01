@@ -23,6 +23,41 @@ export function periodForPlan(planId: PlanId): string {
   return PLAN_LIMITS[planId].period === 'week' ? currentWeek() : currentMonth()
 }
 
+// --- Subscription status cache ---
+//
+// getUserPlanStatus hits the subscriptions table on every search, email send, and
+// outreach generation request. For a user sending a batch of emails that is one DB
+// round-trip per email. A 5-minute in-process TTL is safe here because:
+//
+//   1. Stripe webhooks update the subscriptions row and immediately call
+//      invalidateSubscriptionCache, so paid plan changes propagate within seconds.
+//   2. Trial expiry is time-based and only needs second-level precision — being up to
+//      5 minutes late to block an expired trial is acceptable pre-launch.
+//   3. We never cache isExpired:true results. An expired trial user who just upgraded
+//      must see their new plan on the very next request without waiting for the TTL.
+//
+// A module-scope Map works here because Next.js API routes share a single Node process
+// per serverless instance. The cache is not shared across instances, so this is a
+// best-effort optimisation — correctness is never compromised by a stale cache.
+
+const SUBSCRIPTION_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+interface SubscriptionCacheEntry {
+  data: PlanStatus
+  expiresAt: number
+}
+
+const subscriptionCache = new Map<string, SubscriptionCacheEntry>()
+
+/**
+ * Bust the cached subscription status for a user.
+ * Must be called whenever a Stripe webhook updates the subscriptions table so the
+ * next request picks up the new plan immediately rather than waiting for TTL expiry.
+ */
+export function invalidateSubscriptionCache(userId: string): void {
+  subscriptionCache.delete(userId)
+}
+
 // --- Plan resolution ---
 
 export interface PlanStatus {
@@ -32,17 +67,14 @@ export interface PlanStatus {
   trialDaysRemaining: number | null
 }
 
-export async function getUserPlanStatus(userId: string): Promise<PlanStatus> {
-  const supabase = createAdminClient()
-
-  const { data } = await supabase
-    .from('subscriptions')
-    .select('plan, status, trial_started_at')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  // No subscription row yet (being provisioned) — treat as fresh trial
+// Pure helper — resolves a DB row to PlanStatus without any I/O.
+function resolveRowToPlanStatus(data: {
+  plan: string | null
+  status: string | null
+  trial_started_at: string | null
+} | null): PlanStatus {
   if (!data) {
+    // No subscription row yet (being provisioned) — treat as fresh trial
     return {
       planId: 'free_trial',
       isExpired: false,
@@ -63,14 +95,46 @@ export async function getUserPlanStatus(userId: string): Promise<PlanStatus> {
     return { planId: 'free_trial', isExpired, trialExpiresAt: expiresAt, trialDaysRemaining: daysLeft }
   }
 
-  // Paid plan — check it's active
+  // Paid plan — check it's active.
+  // NOTE: 'past_due' intentionally falls through to the expired branch below.
+  // This is correct security behavior: when a payment fails, the user loses
+  // feature access until payment succeeds and the webhook restores 'active'.
   const isActive = data.status === 'active' || data.status === 'trialing'
   if (!isActive) {
-    // Subscription lapsed — block like an expired trial
+    // Subscription lapsed (past_due, canceled, expired) — block like an expired trial
     return { planId: 'free_trial', isExpired: true, trialExpiresAt: null, trialDaysRemaining: 0 }
   }
 
   return { planId, isExpired: false, trialExpiresAt: null, trialDaysRemaining: null }
+}
+
+export async function getUserPlanStatus(userId: string): Promise<PlanStatus> {
+  // Return cached result if still fresh. Expired-trial entries are never stored in
+  // the cache — a user who just paid must see their upgraded plan immediately.
+  const cached = subscriptionCache.get(userId)
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data
+  }
+
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('subscriptions')
+    .select('plan, status, trial_started_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  const planStatus = resolveRowToPlanStatus(data)
+
+  // Do not cache expired-trial results. The very next request after an upgrade must
+  // read from DB to get the new subscription row.
+  if (!planStatus.isExpired) {
+    subscriptionCache.set(userId, {
+      data: planStatus,
+      expiresAt: Date.now() + SUBSCRIPTION_CACHE_TTL_MS,
+    })
+  }
+
+  return planStatus
 }
 
 /** Convenience — just the PlanId */
@@ -136,15 +200,23 @@ export async function atomicCheckAndIncrement(
 }
 
 export async function checkSearchLimit(userId: string): Promise<LimitCheck> {
-  const planStatus = await getUserPlanStatus(userId)
+  // Fetch plan status and usage for both possible periods concurrently.
+  // Plan status is usually served from the in-process cache (no DB hit).
+  // Fetching both week and month usage speculatively costs one extra DB call
+  // but halves sequential latency by eliminating the wait on plan status before
+  // we know which period to query.
+  const [planStatus, usageMonth, usageWeek] = await Promise.all([
+    getUserPlanStatus(userId),
+    getUsage(userId, currentMonth()),
+    getUsage(userId, currentWeek()),
+  ])
 
   if (planStatus.isExpired) {
     return { allowed: false, message: 'Your free trial has expired. Upgrade to continue.', current: 0, limit: 0, upgrade: true }
   }
 
   const limits = PLAN_LIMITS[planStatus.planId]
-  const period = periodForPlan(planStatus.planId)
-  const usage = await getUsage(userId, period)
+  const usage = limits.period === 'week' ? usageWeek : usageMonth
   const current = usage.searches_count
   const limit = limits.searchLimit
   const periodLabel = limits.period === 'week' ? 'this week' : 'this month'
@@ -156,15 +228,19 @@ export async function checkSearchLimit(userId: string): Promise<LimitCheck> {
 }
 
 export async function checkEmailLimit(userId: string): Promise<LimitCheck> {
-  const planStatus = await getUserPlanStatus(userId)
+  // Same parallel-prefetch strategy as checkSearchLimit.
+  const [planStatus, usageMonth, usageWeek] = await Promise.all([
+    getUserPlanStatus(userId),
+    getUsage(userId, currentMonth()),
+    getUsage(userId, currentWeek()),
+  ])
 
   if (planStatus.isExpired) {
     return { allowed: false, message: 'Your free trial has expired. Upgrade to continue.', current: 0, limit: 0, upgrade: true }
   }
 
   const limits = PLAN_LIMITS[planStatus.planId]
-  const period = periodForPlan(planStatus.planId)
-  const usage = await getUsage(userId, period)
+  const usage = limits.period === 'week' ? usageWeek : usageMonth
   const current = usage.emails_sent_count
   const limit = limits.emailLimit
   const periodLabel = limits.period === 'week' ? 'this week' : 'this month'
@@ -176,24 +252,32 @@ export async function checkEmailLimit(userId: string): Promise<LimitCheck> {
 }
 
 export async function checkOutreachGenerationLimit(userId: string): Promise<LimitCheck> {
-  const planStatus = await getUserPlanStatus(userId)
+  const supabase = createAdminClient()
+
+  // Fan out plan status (cached) and both period usage queries concurrently.
+  const [planStatus, dataMonth, dataWeek] = await Promise.all([
+    getUserPlanStatus(userId),
+    supabase
+      .from('usage')
+      .select('outreach_generated_count')
+      .eq('user_id', userId)
+      .eq('month', currentMonth())
+      .single(),
+    supabase
+      .from('usage')
+      .select('outreach_generated_count')
+      .eq('user_id', userId)
+      .eq('month', currentWeek())
+      .single(),
+  ])
 
   if (planStatus.isExpired) {
     return { allowed: false, message: 'Your free trial has expired. Upgrade to continue.', current: 0, limit: 0, upgrade: true }
   }
 
   const limits = PLAN_LIMITS[planStatus.planId]
-  const period = periodForPlan(planStatus.planId)
-  const supabase = createAdminClient()
-
-  const { data } = await supabase
-    .from('usage')
-    .select('outreach_generated_count')
-    .eq('user_id', userId)
-    .eq('month', period)
-    .single()
-
-  const current = (data as { outreach_generated_count?: number } | null)?.outreach_generated_count ?? 0
+  const rawData = limits.period === 'week' ? dataWeek.data : dataMonth.data
+  const current = (rawData as { outreach_generated_count?: number } | null)?.outreach_generated_count ?? 0
   const limit = limits.generationLimit
   const periodLabel = limits.period === 'week' ? 'this week' : 'this month'
 

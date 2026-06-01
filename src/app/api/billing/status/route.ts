@@ -22,7 +22,7 @@ export async function GET(_request: NextRequest) {
       .from('subscriptions')
       // stripe_customer_id is intentionally omitted — it is an internal identifier
       // that should never be exposed to the client.
-      .select('plan, status, current_period_end')
+      .select('plan, status, current_period_end, cancel_at_period_end')
       .eq('user_id', user!.id)
       .maybeSingle(),
     getUserPlanStatus(user!.id),
@@ -36,6 +36,7 @@ export async function GET(_request: NextRequest) {
     plan: planStatus.planId,
     status: sub?.status ?? 'trialing',
     current_period_end: sub?.current_period_end ?? null,
+    cancel_at_period_end: sub?.cancel_at_period_end ?? false,
     is_expired: planStatus.isExpired,
     trial_days_remaining: planStatus.trialDaysRemaining,
     trial_expires_at: planStatus.trialExpiresAt?.toISOString() ?? null,
