@@ -11,16 +11,14 @@ interface ConversationRow extends InboundMessage {
 
 export default async function InboxPage() {
   const supabase = await createServerClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!session) return null
+  if (!user) return null
 
   const { data: messages } = await supabase
     .from('inbound_messages')
     .select('*, businesses(name, category, city, state)')
-    .eq('user_id', session.user.id)
+    .eq('user_id', user!.id)
     .order('received_at', { ascending: false })
 
   const rows = (messages ?? []) as ConversationRow[]

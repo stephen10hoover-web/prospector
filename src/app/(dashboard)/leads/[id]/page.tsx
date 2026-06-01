@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 
 interface LeadDetailPageProps {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 function ScoreGauge({ score }: { score: number }) {
@@ -48,19 +48,18 @@ function ScoreGauge({ score }: { score: number }) {
   )
 }
 
-export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
+export default async function LeadDetailPage({ params: paramsPromise }: LeadDetailPageProps) {
+  const { id } = await paramsPromise
   const supabase = await createServerClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!session) redirect('/login')
+  if (!user) redirect('/login')
 
   const { data: business } = await supabase
     .from('businesses')
     .select('*')
-    .eq('id', params.id)
-    .eq('user_id', session.user.id)
+    .eq('id', id)
+    .eq('user_id', user!.id)
     .single()
 
   if (!business) notFound()
@@ -68,15 +67,15 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
   const { data: outreachLogs } = await supabase
     .from('outreach_logs')
     .select('*')
-    .eq('business_id', params.id)
-    .eq('user_id', session.user.id)
+    .eq('business_id', id)
+    .eq('user_id', user!.id)
     .order('created_at', { ascending: false })
 
   const { data: inboundMessages } = await supabase
     .from('inbound_messages')
     .select('*')
-    .eq('business_id', params.id)
-    .eq('user_id', session.user.id)
+    .eq('business_id', id)
+    .eq('user_id', user!.id)
     .order('received_at', { ascending: true })
 
   const admin = createAdminClient()
@@ -84,14 +83,14 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
     admin
       .from('audit_reports')
       .select('share_token')
-      .eq('business_id', params.id)
-      .eq('user_id', session.user.id)
+      .eq('business_id', id)
+      .eq('user_id', user!.id)
       .maybeSingle(),
     admin
       .from('proposals')
       .select('id, share_token, status, title')
-      .eq('business_id', params.id)
-      .eq('user_id', session.user.id)
+      .eq('business_id', id)
+      .eq('user_id', user!.id)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),

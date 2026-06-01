@@ -62,8 +62,8 @@ function getWeekLabel(date: Date): string {
 
 export default async function AnalyticsPage() {
   const supabase = await createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
 
   const eightWeeksAgo = new Date()
   eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56)
@@ -78,27 +78,27 @@ export default async function AnalyticsPage() {
     supabase
       .from('outreach_logs')
       .select('created_at')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user!.id)
       .eq('type', 'email')
       .eq('status', 'sent')
       .gte('created_at', eightWeeksAgo.toISOString()),
     supabase
       .from('inbound_messages')
       .select('received_at')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user!.id)
       .gte('received_at', eightWeeksAgo.toISOString()),
     supabase
       .from('businesses')
       .select('category, lead_score, pipeline_stage, outreach_status')
-      .eq('user_id', session.user.id),
+      .eq('user_id', user!.id),
     supabase
       .from('sequence_enrollments')
       .select('status')
-      .eq('user_id', session.user.id),
+      .eq('user_id', user!.id),
     supabase
       .from('outreach_logs')
       .select('id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user!.id)
       .eq('type', 'email')
       .eq('status', 'sent')
       .gt('open_count', 0)

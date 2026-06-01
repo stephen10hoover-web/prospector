@@ -7,13 +7,13 @@ import type { Business } from '@/types'
 
 export default async function PipelinePage() {
   const supabase = await createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
 
   const { data } = await supabase
     .from('businesses')
     .select('id, name, category, city, state, rating, lead_score, has_website, outreach_status, pipeline_stage')
-    .eq('user_id', session.user.id)
+    .eq('user_id', user!.id)
     .not('pipeline_stage', 'eq', 'new_lead')
     .order('lead_score', { ascending: false })
     .limit(300)
@@ -22,7 +22,7 @@ export default async function PipelinePage() {
   const { data: newLeads } = await supabase
     .from('businesses')
     .select('id, name, category, city, state, rating, lead_score, has_website, outreach_status, pipeline_stage')
-    .eq('user_id', session.user.id)
+    .eq('user_id', user!.id)
     .eq('pipeline_stage', 'new_lead')
     .order('lead_score', { ascending: false })
     .limit(50)

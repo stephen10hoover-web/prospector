@@ -62,13 +62,11 @@ async function getDashboardData(userId: string): Promise<{
 
 export default async function DashboardPage() {
   const supabase = await createServerClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!session) return null
+  if (!user) return null
 
-  const { stats, recentSearches } = await getDashboardData(session.user.id)
+  const { stats, recentSearches } = await getDashboardData(user!.id)
 
   const statCards = [
     {

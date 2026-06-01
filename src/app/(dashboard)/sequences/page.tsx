@@ -9,8 +9,8 @@ import { DeleteSequenceButton } from '@/components/sequences/DeleteSequenceButto
 
 export default async function SequencesPage() {
   const supabase = await createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
 
   const admin = createAdminClient()
 
@@ -18,12 +18,12 @@ export default async function SequencesPage() {
     admin
       .from('sequences')
       .select('*, sequence_steps(id, step_number, delay_days, subject)')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user!.id)
       .order('created_at', { ascending: false }),
     admin
       .from('sequence_enrollments')
       .select('sequence_id, status')
-      .eq('user_id', session.user.id),
+      .eq('user_id', user!.id),
   ])
 
   const countMap: Record<string, { active: number; completed: number; replied: number }> = {}
