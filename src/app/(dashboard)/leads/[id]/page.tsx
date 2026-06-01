@@ -3,13 +3,16 @@ import { createServerClient } from '@/lib/supabase-server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { OutreachModal } from '@/components/outreach/OutreachModal'
 import { LeadStatusSelect } from '@/components/leads/LeadStatusSelect'
 import { MarkReadOnMount } from '@/components/inbox/MarkReadOnMount'
 import { EnrollModal } from '@/components/sequences/EnrollModal'
-import { SpamScoreWidget } from '@/components/sequences/SpamScoreWidget'
 import { AuditButton } from '@/components/audit/AuditButton'
 import { FindEmailButton } from '@/components/leads/FindEmailButton'
+import { LeadNotesTab } from '@/components/leads/LeadNotesTab'
+import { LeadActivityTab } from '@/components/leads/LeadActivityTab'
+import { ProposalButton } from '@/components/proposals/ProposalButton'
 import type { Business, OutreachLog, InboundMessage, AuditReport } from '@/types'
 import { createAdminClient } from '@/lib/supabase-server'
 import {
@@ -77,22 +80,32 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
     .order('received_at', { ascending: true })
 
   const admin = createAdminClient()
-  const { data: existingAudit } = await admin
-    .from('audit_reports')
-    .select('share_token')
-    .eq('business_id', params.id)
-    .eq('user_id', session.user.id)
-    .maybeSingle()
+  const [{ data: existingAudit }, { data: existingProposal }] = await Promise.all([
+    admin
+      .from('audit_reports')
+      .select('share_token')
+      .eq('business_id', params.id)
+      .eq('user_id', session.user.id)
+      .maybeSingle(),
+    admin
+      .from('proposals')
+      .select('id, share_token, status, title')
+      .eq('business_id', params.id)
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
 
   const biz = business as Business
   const logs = (outreachLogs as OutreachLog[]) ?? []
   const replies = (inboundMessages as InboundMessage[]) ?? []
   const unreadCount = replies.filter((r) => !r.read).length
 
-  // Build unified timeline: sent emails + inbound replies, sorted by time
+  // Build unified conversation timeline
   type TimelineItem =
-    | { kind: 'sent'; log: OutreachLog }
-    | { kind: 'reply'; msg: InboundMessage }
+    | { kind: 'sent'; log: OutreachLog; time: string }
+    | { kind: 'reply'; msg: InboundMessage; time: string }
 
   const timeline: TimelineItem[] = [
     ...logs
@@ -142,7 +155,15 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
             {biz.phone && (
               <div className="flex items-center gap-2 text-sm">
                 <Phone className="h-4 w-4 text-muted-foreground" />
-                <a href={`tel:${biz.phone}`} className="hover:text-primary">{biz.phone}</a>
+                <div>
+                  <a href={`tel:${biz.phone}`} className="hover:text-primary">{biz.phone}</a>
+                  {biz.phone_source && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {biz.phone_source === 'google_maps' ? 'From Google Maps' : biz.phone_source}
+                      {biz.phone_confidence != null ? ` · ${biz.phone_confidence}% confidence` : ''}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
             <div className="flex items-start gap-2 text-sm">
@@ -260,127 +281,136 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
             <OutreachModal business={biz} />
             <EnrollModal businessId={biz.id} businessName={biz.name} />
             <AuditButton businessId={biz.id} existingToken={existingAudit?.share_token ?? null} />
+            <ProposalButton
+              businessId={biz.id}
+              businessName={biz.name}
+              existingProposalId={existingProposal?.id ?? null}
+            />
           </div>
         </CardContent>
       </Card>
 
-      {/* Conversation thread */}
+      {/* Tabbed bottom section: Conversation, Notes, Activity */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            Conversation
-            {unreadCount > 0 && (
-              <Badge className="ml-1 text-xs">{unreadCount} new</Badge>
-            )}
-          </CardTitle>
-          <CardDescription>Emails sent and replies received</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {timeline.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              No outreach activity yet. Generate your first email above.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {timeline.map((item) => {
-                if (item.kind === 'sent') {
-                  const log = item.log
-                  return (
-                    <div key={log.id} className="flex gap-3 pb-4 border-b last:border-0">
-                      <div className="shrink-0 mt-0.5">
-                        <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
-                          <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium">You sent an email</span>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(log.created_at).toLocaleString()}
-                          </span>
-                        </div>
-                        {log.subject && (
-                          <p className="text-sm text-muted-foreground">Subject: {log.subject}</p>
-                        )}
-                        {log.sent_to && (
-                          <p className="text-xs text-muted-foreground mt-0.5">To: {log.sent_to}</p>
-                        )}
-                        {(log.open_count ?? 0) > 0 && (
-                          <p className="text-xs text-green-600 mt-0.5 flex items-center gap-1">
-                            <Eye className="h-3 w-3" />
-                            Opened {log.open_count} time{log.open_count === 1 ? '' : 's'}
-                            {log.first_opened_at ? ` · first ${new Date(log.first_opened_at).toLocaleDateString()}` : ''}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                }
+        <CardContent className="pt-6">
+          <Tabs defaultValue="conversation">
+            <TabsList className="mb-4">
+              <TabsTrigger value="conversation">
+                Conversation
+                {unreadCount > 0 && (
+                  <span className="ml-1.5 bg-primary text-primary-foreground text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                    {unreadCount}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="notes">Notes</TabsTrigger>
+              <TabsTrigger value="activity">Activity</TabsTrigger>
+            </TabsList>
 
-                const msg = item.msg
-                return (
-                  <div key={msg.id} className={`flex gap-3 pb-4 border-b last:border-0 ${!msg.read ? 'bg-primary/5 -mx-2 px-2 rounded-lg' : ''}`}>
-                    <div className="shrink-0 mt-0.5">
-                      <div className="h-7 w-7 rounded-full bg-green-100 flex items-center justify-center">
-                        <ArrowDownLeft className="h-3.5 w-3.5 text-green-600" />
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">
-                            {msg.from_name ?? msg.from_email}
-                          </span>
-                          {!msg.read && <Badge className="text-xs px-1.5 py-0 h-4">New</Badge>}
+            <TabsContent value="conversation">
+              {timeline.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  No outreach activity yet. Generate your first email above.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {timeline.map((item) => {
+                    if (item.kind === 'sent') {
+                      const log = item.log
+                      return (
+                        <div key={log.id} className="flex gap-3 pb-4 border-b last:border-0">
+                          <div className="shrink-0 mt-0.5">
+                            <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
+                              <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium">You sent an email</span>
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(log.created_at).toLocaleString()}
+                              </span>
+                            </div>
+                            {log.subject && (
+                              <p className="text-sm text-muted-foreground">Subject: {log.subject}</p>
+                            )}
+                            {log.sent_to && (
+                              <p className="text-xs text-muted-foreground mt-0.5">To: {log.sent_to}</p>
+                            )}
+                            {(log.open_count ?? 0) > 0 && (
+                              <p className="text-xs text-green-600 mt-0.5 flex items-center gap-1">
+                                <Eye className="h-3 w-3" />
+                                Opened {log.open_count} time{log.open_count === 1 ? '' : 's'}
+                                {log.first_opened_at ? ` · first ${new Date(log.first_opened_at).toLocaleDateString()}` : ''}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(msg.received_at).toLocaleString()}
-                        </span>
+                      )
+                    }
+
+                    const msg = item.msg
+                    return (
+                      <div key={msg.id} className={`flex gap-3 pb-4 border-b last:border-0 ${!msg.read ? 'bg-primary/5 -mx-2 px-2 rounded-lg' : ''}`}>
+                        <div className="shrink-0 mt-0.5">
+                          <div className="h-7 w-7 rounded-full bg-green-100 flex items-center justify-center">
+                            <ArrowDownLeft className="h-3.5 w-3.5 text-green-600" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold">
+                                {msg.from_name ?? msg.from_email}
+                              </span>
+                              {!msg.read && <Badge className="text-xs px-1.5 py-0 h-4">New</Badge>}
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(msg.received_at).toLocaleString()}
+                            </span>
+                          </div>
+                          {msg.subject && (
+                            <p className="text-xs text-muted-foreground mb-1">Re: {msg.subject}</p>
+                          )}
+                          <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.body}</p>
+                        </div>
                       </div>
-                      {msg.subject && (
-                        <p className="text-xs text-muted-foreground mb-1">Re: {msg.subject}</p>
-                      )}
-                      <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.body}</p>
-                    </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Generation history */}
+              {logs.some((l) => l.type === 'generated') && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    AI Draft History
+                  </p>
+                  <div className="space-y-2">
+                    {logs
+                      .filter((l) => l.type === 'generated')
+                      .map((log) => (
+                        <div key={log.id} className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>AI draft generated</span>
+                          <span>{new Date(log.created_at).toLocaleString()}</span>
+                        </div>
+                      ))}
                   </div>
-                )
-              })}
-            </div>
-          )}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="notes">
+              <LeadNotesTab businessId={biz.id} />
+            </TabsContent>
+
+            <TabsContent value="activity">
+              <LeadActivityTab businessId={biz.id} />
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
-
-      {/* Outreach history (generated drafts) */}
-      {logs.some((l) => l.type === 'generated') && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Generation History
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {logs
-                .filter((l) => l.type === 'generated')
-                .map((log) => (
-                  <div key={log.id} className="flex gap-3 pb-3 border-b last:border-0">
-                    <Clock className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">AI draft generated</span>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(log.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Mark replies as read when page is opened */}
       {unreadCount > 0 && <MarkReadOnMount businessId={biz.id} />}

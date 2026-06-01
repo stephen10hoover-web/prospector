@@ -17,6 +17,8 @@ export interface Business {
   city: string
   state: string
   phone: string | null
+  phone_source: 'google_maps' | 'manual' | 'import' | null
+  phone_confidence: number | null
   email: string | null
   email_source: 'hunter' | 'pattern' | 'manual' | null
   email_confidence: number | null
@@ -29,7 +31,9 @@ export interface Business {
   website_issues: string[]
   lead_score: number
   outreach_status: OutreachStatus
+  pipeline_stage: string
   ai_score_reasoning: string | null
+  import_job_id: string | null
   created_at: string
   updated_at: string
 }
@@ -159,6 +163,8 @@ export interface SequenceStep {
   delay_days: number
   subject: string
   body: string
+  subject_b: string | null
+  body_b: string | null
 }
 
 export interface SequenceEnrollment {
@@ -167,6 +173,7 @@ export interface SequenceEnrollment {
   business_id: string
   user_id: string
   current_step: number
+  ab_variant: 'A' | 'B'
   status: 'active' | 'paused' | 'completed' | 'replied' | 'bounced' | 'cancelled'
   enrolled_at: string
   next_send_at: string
@@ -178,6 +185,8 @@ export interface UserProfile {
   sending_email: string | null
   display_name: string | null
   physical_address: string | null
+  booking_link: string | null
+  workspace_id: string | null
 }
 
 export interface InboundMessage {
@@ -188,6 +197,178 @@ export interface InboundMessage {
   from_name: string | null
   subject: string | null
   body: string
+  message_id: string | null
   received_at: string
   read: boolean
+}
+
+export type LeadActivityType =
+  | 'note_added'
+  | 'note_updated'
+  | 'note_deleted'
+  | 'email_sent'
+  | 'email_opened'
+  | 'reply_received'
+  | 'stage_changed'
+  | 'status_changed'
+  | 'call_logged'
+  | 'task_completed'
+  | 'imported'
+  | 'proposal_sent'
+  | 'proposal_viewed'
+  | 'sequence_enrolled'
+  | 'sequence_replied'
+  | 'sequence_completed'
+
+export interface LeadNote {
+  id: string
+  business_id: string
+  user_id: string
+  body: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LeadActivity {
+  id: string
+  business_id: string
+  user_id: string
+  type: LeadActivityType
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface ImportJob {
+  id: string
+  user_id: string
+  filename: string | null
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  total_rows: number
+  imported_rows: number
+  skipped_rows: number
+  error_message: string | null
+  search_id: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+export interface Proposal {
+  id: string
+  business_id: string
+  user_id: string
+  title: string
+  content: ProposalContent
+  share_token: string
+  status: 'draft' | 'sent' | 'viewed' | 'accepted' | 'declined'
+  viewed_at: string | null
+  view_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ProposalContent {
+  intro: string
+  services: ProposalService[]
+  packages: ProposalPackage[]
+  about: string
+  next_steps: string
+}
+
+export interface ProposalService {
+  name: string
+  description: string
+  included: boolean
+}
+
+export interface ProposalPackage {
+  name: string
+  price: number
+  billing: 'one_time' | 'monthly' | 'quarterly'
+  features: string[]
+  recommended: boolean
+}
+
+export interface ProposalTemplate {
+  id: string
+  user_id: string
+  name: string
+  content: ProposalContent
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Workspace {
+  id: string
+  name: string
+  owner_id: string
+  slug: string
+  created_at: string
+}
+
+export interface WorkspaceMember {
+  id: string
+  workspace_id: string
+  user_id: string
+  role: 'owner' | 'admin' | 'member'
+  invited_by: string | null
+  joined_at: string
+}
+
+export interface WorkspaceInvite {
+  id: string
+  workspace_id: string
+  invited_by: string
+  email: string
+  role: 'admin' | 'member'
+  token: string
+  created_at: string
+  expires_at: string
+  accepted_at: string | null
+}
+
+export interface OutboundWebhook {
+  id: string
+  user_id: string
+  url: string
+  secret: string | null
+  events: string[]
+  active: boolean
+  created_at: string
+}
+
+export interface WebhookDelivery {
+  id: string
+  webhook_id: string
+  event: string
+  payload: Record<string, unknown>
+  status_code: number
+  response_body: string | null
+  success: boolean
+  delivered_at: string
+}
+
+export interface EmailSuppression {
+  id: string
+  email: string
+  user_id: string | null
+  reason: 'unsubscribe' | 'bounce' | 'complaint' | 'manual' | string | null
+  added_by: string | null
+  created_at: string
+}
+
+export interface DomainSuppression {
+  id: string
+  domain: string
+  reason: string | null
+  created_at: string
+}
+
+export interface AbTestResult {
+  variant: 'A' | 'B'
+  sent: number
+  opened: number
+  replied: number
+  openRate: number
+  replyRate: number
 }

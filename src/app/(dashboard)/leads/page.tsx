@@ -2,6 +2,8 @@ import { Suspense } from 'react'
 import { createServerClient } from '@/lib/supabase-server'
 import { LeadsTable } from '@/components/leads/LeadsTable'
 import { LeadFilters } from '@/components/leads/LeadFilters'
+import { ExportButton } from '@/components/leads/ExportButton'
+import { ImportButton } from '@/components/leads/ImportButton'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -69,12 +71,16 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
             {total} businesses found
           </p>
         </div>
-        <Button asChild>
-          <Link href="/search">
-            <Search className="h-4 w-4 mr-2" />
-            New Search
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <ExportButton filters={searchParams} totalLeads={total} />
+          <ImportButton />
+          <Button asChild>
+            <Link href="/search">
+              <Search className="h-4 w-4 mr-2" />
+              New Search
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <LeadFilters initialFilters={searchParams} />

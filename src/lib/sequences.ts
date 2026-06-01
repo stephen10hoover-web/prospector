@@ -30,7 +30,7 @@ export async function processSequences(userId?: string): Promise<ProcessResult> 
   if (error || !enrollments?.length) return result
 
   // Cache user profiles to avoid redundant DB calls per enrollment
-  const profileCache = new Map<string, { sending_email: string | null; physical_address: string | null }>()
+  const profileCache = new Map<string, { sending_email: string | null; physical_address: string | null; booking_link: string | null }>()
 
   for (const enrollment of enrollments) {
     try {
@@ -38,12 +38,13 @@ export async function processSequences(userId?: string): Promise<ProcessResult> 
       if (!profileCache.has(uid)) {
         const { data: prof } = await supabase
           .from('user_profiles')
-          .select('sending_email, physical_address')
+          .select('sending_email, physical_address, booking_link')
           .eq('id', uid)
           .maybeSingle()
         profileCache.set(uid, {
           sending_email: prof?.sending_email ?? null,
           physical_address: prof?.physical_address ?? null,
+          booking_link: prof?.booking_link ?? null,
         })
       }
       const outcome = await processEnrollment(enrollment, supabase, profileCache.get(uid)!)
@@ -63,13 +64,14 @@ async function processEnrollment(
   enrollment: Record<string, unknown>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  profile: { sending_email: string | null; physical_address: string | null }
+  profile: { sending_email: string | null; physical_address: string | null; booking_link: string | null }
 ): Promise<'sent' | 'skipped' | 'stopped'> {
   const enrollmentId = enrollment.id as string
   const businessId = enrollment.business_id as string
   const userId = enrollment.user_id as string
   const currentStep = enrollment.current_step as number
   const sequenceId = enrollment.sequence_id as string
+  const abVariant = (enrollment.ab_variant as 'A' | 'B') ?? 'A'
 
   // Stop if business replied
   const { count: replyCount } = await supabase
@@ -83,6 +85,14 @@ async function processEnrollment(
       .from('sequence_enrollments')
       .update({ status: 'replied', completed_at: new Date().toISOString() })
       .eq('id', enrollmentId)
+
+    await supabase.from('lead_activities').insert({
+      business_id: businessId,
+      user_id: userId,
+      type: 'sequence_replied',
+      metadata: { sequence_id: sequenceId, enrollment_id: enrollmentId },
+    }).then(null, () => null)
+
     return 'stopped'
   }
 
@@ -112,6 +122,14 @@ async function processEnrollment(
       .from('sequence_enrollments')
       .update({ status: 'completed', completed_at: new Date().toISOString() })
       .eq('id', enrollmentId)
+
+    await supabase.from('lead_activities').insert({
+      business_id: businessId,
+      user_id: userId,
+      type: 'sequence_completed',
+      metadata: { sequence_id: sequenceId, enrollment_id: enrollmentId },
+    }).then(null, () => null)
+
     return 'stopped'
   }
 
@@ -142,8 +160,19 @@ async function processEnrollment(
     }
   }
 
-  const subject = substituteVars(step.subject as string, business)
-  const body = substituteVars(step.body as string, business)
+  // Determine which variant to use (A/B if variant B template exists)
+  const hasVariantB = !!(step.subject_b && step.body_b)
+  const useVariant = hasVariantB ? abVariant : 'A'
+  const rawSubject = useVariant === 'B' ? (step.subject_b as string) : (step.subject as string)
+  const rawBody = useVariant === 'B' ? (step.body_b as string) : (step.body as string)
+
+  const subject = substituteVars(rawSubject, business)
+  const body = substituteVars(rawBody, business)
+
+  // Append booking link if configured
+  const finalBody = profile.booking_link
+    ? `${body}\n\n📅 Book a call: ${profile.booking_link}`
+    : body
 
   // Pre-insert outreach_log to get ID for tracking token
   const { data: logRow } = await supabase
@@ -153,7 +182,7 @@ async function processEnrollment(
       user_id: userId,
       type: 'email',
       subject,
-      body,
+      body: finalBody,
       sent_to: business.email,
       status: 'sent',
     })
@@ -175,7 +204,7 @@ async function processEnrollment(
   await sendOutreachEmail({
     to: business.email,
     subject,
-    body,
+    body: finalBody,
     businessName: business.name,
     businessId: business.id,
     userId,
@@ -191,6 +220,29 @@ async function processEnrollment(
     to_email: business.email,
     subject,
   })
+
+  // Record A/B result row for this send
+  if (hasVariantB) {
+    await supabase.from('sequence_ab_results').insert({
+      sequence_id: sequenceId,
+      step_number: currentStep,
+      variant: useVariant,
+      enrollment_id: enrollmentId,
+    }).then(null, () => null)
+  }
+
+  // Log activity
+  await supabase.from('lead_activities').insert({
+    business_id: businessId,
+    user_id: userId,
+    type: 'email_sent',
+    metadata: {
+      subject,
+      sequence_id: sequenceId,
+      step_number: currentStep,
+      ab_variant: useVariant,
+    },
+  }).then(null, () => null)
 
   await advanceEnrollment(enrollmentId, currentStep, sequenceId, supabase)
   return 'sent'

@@ -13,15 +13,26 @@ import { Label } from '@/components/ui/label'
 import {
   Loader2, Zap, CreditCard, BarChart2, CheckCircle, Palette,
   Mail, MapPin, Clock, Star, Users, Shield, User, Download, Trash2,
+  Webhook, Ban, Link2, Plus, ToggleLeft, ToggleRight, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { PLAN_META, PLAN_LIMITS, planDisplayName, type PlanId } from '@/lib/plans'
-import type { UserProfile } from '@/types'
+import type { OutboundWebhook, EmailSuppression, DomainSuppression } from '@/types'
+
+const WEBHOOK_EVENTS = [
+  { value: 'lead_replied', label: 'Lead Replied' },
+  { value: 'proposal_sent', label: 'Proposal Sent' },
+  { value: 'proposal_viewed', label: 'Proposal Viewed' },
+  { value: 'deal_won', label: 'Deal Won' },
+  { value: 'sequence_enrolled', label: 'Sequence Enrolled' },
+  { value: 'sequence_completed', label: 'Sequence Completed' },
+] as const
 
 interface SenderProfile {
   full_name: string
   company_name: string
   mailing_address: string
+  booking_link: string
 }
 
 interface BillingData {
@@ -56,10 +67,36 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [upgrading, setUpgrading] = useState<PlanId | null>(null)
   const [portaling, setPortaling] = useState(false)
-  const [profile, setProfile] = useState<SenderProfile>({ full_name: '', company_name: '', mailing_address: '' })
+  const [profile, setProfile] = useState<SenderProfile>({ full_name: '', company_name: '', mailing_address: '', booking_link: '' })
   const [savingProfile, setSavingProfile] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Webhooks
+  const [webhooks, setWebhooks] = useState<OutboundWebhook[]>([])
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [webhookEvents, setWebhookEvents] = useState<string[]>(['lead_replied'])
+  const [savingWebhook, setSavingWebhook] = useState(false)
+  const [deletingWebhookId, setDeletingWebhookId] = useState<string | null>(null)
+  const [expandedWebhookId, setExpandedWebhookId] = useState<string | null>(null)
+  const [deliveries, setDeliveries] = useState<Record<string, { id: string; event: string; status_code: number | null; success: boolean; created_at: string }[]>>({})
+  const [loadingDeliveries, setLoadingDeliveries] = useState<string | null>(null)
+
+  // Suppressions
+  const [emailSuppressions, setEmailSuppressions] = useState<EmailSuppression[]>([])
+  const [domainSuppressions, setDomainSuppressions] = useState<DomainSuppression[]>([])
+  const [newEmail, setNewEmail] = useState('')
+  const [newDomain, setNewDomain] = useState('')
+  const [addingEmail, setAddingEmail] = useState(false)
+  const [addingDomain, setAddingDomain] = useState(false)
+  const [deletingSuppId, setDeletingSuppId] = useState<string | null>(null)
+
+  // Team / Workspaces
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string; slug: string; role: string; created_at: string }[]>([])
+  const [newWorkspaceName, setNewWorkspaceName] = useState('')
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [invitingToWorkspace, setInvitingToWorkspace] = useState<string | null>(null)
 
   useEffect(() => {
     if (searchParams.get('upgraded') === '1') {
@@ -67,6 +104,10 @@ export default function SettingsPage() {
     }
     fetchBillingData()
     fetchProfile()
+    fetchWebhooks()
+    fetchSuppressions('email')
+    fetchSuppressions('domain')
+    fetchWorkspaces()
   }, [])
 
   async function fetchProfile() {
@@ -78,6 +119,7 @@ export default function SettingsPage() {
           full_name: json.full_name ?? '',
           company_name: json.company_name ?? '',
           mailing_address: json.mailing_address ?? '',
+          booking_link: json.booking_link ?? '',
         })
       }
     } catch {
@@ -134,6 +176,181 @@ export default function SettingsPage() {
     } catch {
       toast.error('Failed to delete account. Please contact support@prospector.app.')
       setDeleting(false)
+    }
+  }
+
+  async function fetchWebhooks() {
+    try {
+      const res = await fetch('/api/webhooks')
+      if (res.ok) setWebhooks(await res.json())
+    } catch { /* non-fatal */ }
+  }
+
+  async function addWebhook() {
+    if (!webhookUrl.trim()) { toast.error('URL is required'); return }
+    if (webhookEvents.length === 0) { toast.error('Select at least one event'); return }
+    setSavingWebhook(true)
+    try {
+      const res = await fetch('/api/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: webhookUrl.trim(), events: webhookEvents, active: true }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to create webhook')
+      setWebhooks((prev) => [json, ...prev])
+      setWebhookUrl('')
+      setWebhookEvents(['lead_replied'])
+      toast.success('Webhook created')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create webhook')
+    } finally {
+      setSavingWebhook(false)
+    }
+  }
+
+  async function toggleWebhook(webhook: OutboundWebhook) {
+    try {
+      const res = await fetch(`/api/webhooks/${webhook.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !webhook.active }),
+      })
+      if (!res.ok) throw new Error()
+      const updated: OutboundWebhook = await res.json()
+      setWebhooks((prev) => prev.map((w) => w.id === updated.id ? updated : w))
+    } catch {
+      toast.error('Failed to update webhook')
+    }
+  }
+
+  async function deleteWebhook(id: string) {
+    setDeletingWebhookId(id)
+    try {
+      const res = await fetch(`/api/webhooks/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      setWebhooks((prev) => prev.filter((w) => w.id !== id))
+      toast.success('Webhook deleted')
+    } catch {
+      toast.error('Failed to delete webhook')
+    } finally {
+      setDeletingWebhookId(null)
+    }
+  }
+
+  async function loadDeliveries(webhookId: string) {
+    if (expandedWebhookId === webhookId) {
+      setExpandedWebhookId(null)
+      return
+    }
+    setExpandedWebhookId(webhookId)
+    if (deliveries[webhookId]) return
+    setLoadingDeliveries(webhookId)
+    try {
+      const res = await fetch(`/api/webhooks/${webhookId}/deliveries`)
+      if (res.ok) {
+        const data = await res.json()
+        setDeliveries((prev) => ({ ...prev, [webhookId]: data }))
+      }
+    } catch { /* non-fatal */ } finally {
+      setLoadingDeliveries(null)
+    }
+  }
+
+  async function fetchSuppressions(type: 'email' | 'domain') {
+    try {
+      const res = await fetch(`/api/suppressions?type=${type}`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (type === 'email') setEmailSuppressions(data)
+      else setDomainSuppressions(data)
+    } catch { /* non-fatal */ }
+  }
+
+  async function addSuppression(type: 'email' | 'domain') {
+    const value = type === 'email' ? newEmail.trim() : newDomain.trim()
+    if (!value) return
+    if (type === 'email') setAddingEmail(true)
+    else setAddingDomain(true)
+    try {
+      const body = type === 'email' ? { type: 'email', email: value } : { type: 'domain', domain: value }
+      const res = await fetch('/api/suppressions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to add')
+      if (type === 'email') { setEmailSuppressions((p) => [json, ...p]); setNewEmail('') }
+      else { setDomainSuppressions((p) => [json, ...p]); setNewDomain('') }
+      toast.success(`${type === 'email' ? 'Email' : 'Domain'} suppressed`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add suppression')
+    } finally {
+      if (type === 'email') setAddingEmail(false)
+      else setAddingDomain(false)
+    }
+  }
+
+  async function removeSuppression(id: string, type: 'email' | 'domain') {
+    setDeletingSuppId(id)
+    try {
+      const res = await fetch(`/api/suppressions/${id}?type=${type}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      if (type === 'email') setEmailSuppressions((p) => p.filter((s) => s.id !== id))
+      else setDomainSuppressions((p) => p.filter((s) => s.id !== id))
+    } catch {
+      toast.error('Failed to remove')
+    } finally {
+      setDeletingSuppId(null)
+    }
+  }
+
+  async function fetchWorkspaces() {
+    try {
+      const res = await fetch('/api/workspaces')
+      if (res.ok) setWorkspaces(await res.json())
+    } catch { /* non-fatal */ }
+  }
+
+  async function createWorkspace() {
+    if (!newWorkspaceName.trim()) return
+    setCreatingWorkspace(true)
+    try {
+      const res = await fetch('/api/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newWorkspaceName.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to create')
+      setWorkspaces((prev) => [...prev, { ...json, role: 'owner' }])
+      setNewWorkspaceName('')
+      toast.success('Workspace created')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create workspace')
+    } finally {
+      setCreatingWorkspace(false)
+    }
+  }
+
+  async function sendInvite(workspaceId: string) {
+    if (!inviteEmail.trim()) return
+    setInvitingToWorkspace(workspaceId)
+    try {
+      const res = await fetch(`/api/workspaces/${workspaceId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail.trim(), role: 'member' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to invite')
+      setInviteEmail('')
+      toast.success(`Invite sent to ${inviteEmail.trim()}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send invite')
+    } finally {
+      setInvitingToWorkspace(null)
     }
   }
 
@@ -401,10 +618,296 @@ export default function SettingsPage() {
               onChange={(e) => setProfile((p) => ({ ...p, mailing_address: e.target.value }))}
             />
           </div>
+          <div className="grid gap-2">
+            <Label htmlFor="booking_link" className="flex items-center gap-1.5">
+              <Link2 className="h-3.5 w-3.5" />
+              Booking Link
+              <span className="text-xs text-muted-foreground font-normal ml-1">(appended to sequence emails — optional)</span>
+            </Label>
+            <Input
+              id="booking_link"
+              placeholder="https://calendly.com/yourname"
+              value={profile.booking_link}
+              onChange={(e) => setProfile((p) => ({ ...p, booking_link: e.target.value }))}
+            />
+          </div>
           <Button onClick={saveProfile} disabled={savingProfile}>
             {savingProfile ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
             Save Profile
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Webhooks */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Webhook className="h-5 w-5" />
+            Webhooks
+          </CardTitle>
+          <CardDescription>Receive real-time HTTP POST notifications when events occur in your account</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Endpoint URL</Label>
+              <Input
+                placeholder="https://your-server.com/webhook"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Events to Subscribe</Label>
+              <div className="flex flex-wrap gap-2">
+                {WEBHOOK_EVENTS.map(({ value, label }) => {
+                  const active = webhookEvents.includes(value)
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        setWebhookEvents((prev) =>
+                          active ? prev.filter((e) => e !== value) : [...prev, value]
+                        )
+                      }}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                        active
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'border-border text-muted-foreground hover:border-primary'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <Button size="sm" onClick={addWebhook} disabled={savingWebhook}>
+              {savingWebhook ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
+              Add Webhook
+            </Button>
+          </div>
+
+          {webhooks.length > 0 && (
+            <div className="space-y-2">
+              {webhooks.map((wh) => (
+                <div key={wh.id} className="border rounded-lg overflow-hidden">
+                  <div className="flex items-center gap-3 p-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-mono truncate">{wh.url}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {wh.events.join(', ')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => toggleWebhook(wh)}
+                        className="text-muted-foreground hover:text-foreground"
+                        title={wh.active ? 'Disable' : 'Enable'}
+                      >
+                        {wh.active
+                          ? <ToggleRight className="h-5 w-5 text-primary" />
+                          : <ToggleLeft className="h-5 w-5" />
+                        }
+                      </button>
+                      <button
+                        onClick={() => loadDeliveries(wh.id)}
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                      >
+                        {expandedWebhookId === wh.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </button>
+                      <button
+                        onClick={() => deleteWebhook(wh.id)}
+                        disabled={deletingWebhookId === wh.id}
+                        className="text-destructive hover:text-destructive/80"
+                      >
+                        {deletingWebhookId === wh.id
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Trash2 className="h-4 w-4" />
+                        }
+                      </button>
+                    </div>
+                  </div>
+                  {expandedWebhookId === wh.id && (
+                    <div className="border-t bg-muted/30 p-3 space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Recent Deliveries</p>
+                      {loadingDeliveries === wh.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : (deliveries[wh.id] ?? []).length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No deliveries yet</p>
+                      ) : (
+                        (deliveries[wh.id] ?? []).map((d) => (
+                          <div key={d.id} className="flex items-center gap-2 text-xs">
+                            <span className={d.success ? 'text-green-600' : 'text-destructive'}>
+                              {d.success ? '✓' : '✗'}
+                            </span>
+                            <span className="font-mono">{d.event}</span>
+                            <span className="text-muted-foreground">{d.status_code ?? '—'}</span>
+                            <span className="text-muted-foreground ml-auto">
+                              {new Date(d.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Suppression List */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Ban className="h-5 w-5" />
+            Suppression List
+          </CardTitle>
+          <CardDescription>Emails and domains blocked from receiving any outreach</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Email suppressions */}
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Suppressed Emails</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="email@example.com"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addSuppression('email')}
+                className="h-8 text-sm"
+              />
+              <Button size="sm" onClick={() => addSuppression('email')} disabled={addingEmail} className="shrink-0">
+                {addingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+            {emailSuppressions.length > 0 && (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {emailSuppressions.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between text-sm py-1 px-2 rounded hover:bg-muted/50">
+                    <span className="font-mono text-xs">{s.email}</span>
+                    <button
+                      onClick={() => removeSuppression(s.id, 'email')}
+                      disabled={deletingSuppId === s.id}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                    >
+                      {deletingSuppId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {emailSuppressions.length === 0 && (
+              <p className="text-xs text-muted-foreground">No suppressed emails yet.</p>
+            )}
+          </div>
+
+          <Separator />
+
+          {/* Domain suppressions */}
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Suppressed Domains</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="competitor.com"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addSuppression('domain')}
+                className="h-8 text-sm"
+              />
+              <Button size="sm" onClick={() => addSuppression('domain')} disabled={addingDomain} className="shrink-0">
+                {addingDomain ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+            {domainSuppressions.length > 0 && (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {domainSuppressions.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between text-sm py-1 px-2 rounded hover:bg-muted/50">
+                    <span className="font-mono text-xs">@{s.domain}</span>
+                    <button
+                      onClick={() => removeSuppression(s.id, 'domain')}
+                      disabled={deletingSuppId === s.id}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                    >
+                      {deletingSuppId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {domainSuppressions.length === 0 && (
+              <p className="text-xs text-muted-foreground">No suppressed domains yet.</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Team / Workspaces */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Team &amp; Workspaces
+          </CardTitle>
+          <CardDescription>Collaborate with teammates by creating shared workspaces</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {workspaces.length > 0 && (
+            <div className="space-y-2">
+              {workspaces.map((ws) => (
+                <div key={ws.id} className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm">{ws.name}</p>
+                      <p className="text-xs text-muted-foreground">/{ws.slug} · {ws.role}</p>
+                    </div>
+                    <Badge variant={ws.role === 'owner' ? 'default' : 'secondary'} className="text-xs capitalize">
+                      {ws.role}
+                    </Badge>
+                  </div>
+                  {(ws.role === 'owner' || ws.role === 'admin') && (
+                    <div className="flex gap-2 pt-1">
+                      <Input
+                        placeholder="Invite by email"
+                        value={invitingToWorkspace === ws.id ? inviteEmail : ''}
+                        onChange={(e) => {
+                          setInvitingToWorkspace(ws.id)
+                          setInviteEmail(e.target.value)
+                        }}
+                        className="h-7 text-xs flex-1"
+                        onKeyDown={(e) => e.key === 'Enter' && sendInvite(ws.id)}
+                      />
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => sendInvite(ws.id)}
+                        disabled={invitingToWorkspace === ws.id && !inviteEmail.trim()}
+                      >
+                        Invite
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Input
+              placeholder="New workspace name"
+              value={newWorkspaceName}
+              onChange={(e) => setNewWorkspaceName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && createWorkspace()}
+              className="h-8 text-sm"
+            />
+            <Button size="sm" onClick={createWorkspace} disabled={creatingWorkspace || !newWorkspaceName.trim()}>
+              {creatingWorkspace ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+              Create
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

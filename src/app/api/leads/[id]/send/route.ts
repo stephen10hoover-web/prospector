@@ -62,16 +62,31 @@ export async function POST(
 
     // Check suppression list before sending
     const adminDb = createAdminClient()
-    const { data: suppressed } = await adminDb
-      .from('email_suppressions')
-      .select('email')
-      .eq('user_id', user!.id)
-      .eq('email', to.toLowerCase())
-      .maybeSingle()
+    const emailDomain = to.split('@')[1]?.toLowerCase() ?? ''
+
+    const [{ data: suppressed }, { data: domainSuppressed }] = await Promise.all([
+      adminDb
+        .from('email_suppressions')
+        .select('email')
+        .eq('email', to.toLowerCase())
+        .maybeSingle(),
+      adminDb
+        .from('domain_suppressions')
+        .select('domain')
+        .eq('domain', emailDomain)
+        .maybeSingle(),
+    ])
 
     if (suppressed) {
       return NextResponse.json(
         { error: 'This email address has unsubscribed and cannot receive emails.' },
+        { status: 422 }
+      )
+    }
+
+    if (domainSuppressed) {
+      return NextResponse.json(
+        { error: `Emails to @${emailDomain} are suppressed.` },
         { status: 422 }
       )
     }
@@ -135,6 +150,14 @@ export async function POST(
       .update({ outreach_status: 'sent' })
       .eq('id', id)
       .eq('user_id', user!.id)
+
+    // Log activity (non-fatal)
+    adminDb.from('lead_activities').insert({
+      business_id: id,
+      user_id: user!.id,
+      type: 'email_sent',
+      metadata: { subject, to },
+    }).then(null, () => null)
 
     return NextResponse.json({ success: true, messageId: result.id })
   } catch (error) {

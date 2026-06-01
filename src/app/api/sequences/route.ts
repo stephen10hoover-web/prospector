@@ -13,6 +13,8 @@ const stepSchema = z.object({
     message: 'Subject must not contain line breaks',
   }),
   body: z.string().min(1).max(5000),
+  subject_b: z.string().max(200).nullable().optional(),
+  body_b: z.string().max(5000).nullable().optional(),
 })
 
 const createSchema = z.object({
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
   const [{ data: sequences }, { data: enrollmentCounts }] = await Promise.all([
     admin
       .from('sequences')
-      .select('*, sequence_steps(id, step_number, delay_days, subject)')
+      .select('*, sequence_steps(id, step_number, delay_days, subject, subject_b)')
       .eq('user_id', user?.id)
       .order('created_at', { ascending: false }),
     admin
@@ -79,7 +81,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create sequence' }, { status: 500 })
   }
 
-  const stepRows = steps.map((s) => ({ ...s, sequence_id: sequence.id }))
+  const stepRows = steps.map((s) => ({
+    step_number: s.step_number,
+    delay_days: s.delay_days,
+    subject: s.subject,
+    body: s.body,
+    subject_b: s.subject_b ?? null,
+    body_b: s.body_b ?? null,
+    sequence_id: sequence.id,
+  }))
   const { error: stepsError } = await admin.from('sequence_steps').insert(stepRows)
 
   if (stepsError) {

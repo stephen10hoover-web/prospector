@@ -1,8 +1,9 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
+import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { z } from 'zod'
 import { isUUID } from '@/lib/validate'
+import { fireWebhooks } from '@/lib/webhooks'
 
 const VALID_STAGES = [
   'new_lead', 'contacted', 'follow_up', 'replied',
@@ -28,6 +29,15 @@ export async function PATCH(
   const parsed = schema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
 
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('pipeline_stage, name')
+    .eq('id', id)
+    .eq('user_id', user!.id)
+    .single()
+
+  if (!biz) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
   const { error } = await supabase
     .from('businesses')
     .update({ pipeline_stage: parsed.data.stage })
@@ -38,5 +48,24 @@ export async function PATCH(
     console.error('[stage] update error:', error.message)
     return NextResponse.json({ error: 'Failed to update stage' }, { status: 500 })
   }
+
+  // Log activity
+  const admin = createAdminClient()
+  admin.from('lead_activities').insert({
+    business_id: id,
+    user_id: user!.id,
+    type: 'stage_changed',
+    metadata: { from: biz.pipeline_stage, to: parsed.data.stage },
+  }).then(null, () => null)
+
+  // Fire webhook for deal won
+  if (parsed.data.stage === 'closed_won') {
+    fireWebhooks(user!.id, 'deal_won', {
+      business_id: id,
+      business_name: biz.name,
+      stage: 'closed_won',
+    }).catch(() => null)
+  }
+
   return NextResponse.json({ ok: true })
 }

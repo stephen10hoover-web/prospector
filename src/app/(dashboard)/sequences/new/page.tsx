@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Trash2, ArrowLeft, Zap } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Plus, Trash2, ArrowLeft, Zap, FlaskConical } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
@@ -16,6 +17,9 @@ interface Step {
   delay_days: number
   subject: string
   body: string
+  subject_b: string | null
+  body_b: string | null
+  ab_enabled: boolean
 }
 
 const DEFAULT_STEPS: Step[] = [
@@ -32,6 +36,9 @@ I know things get busy — I just wanted to make sure my note didn't get buried.
 Would a quick 15-minute call this week make sense? I've helped similar businesses in {{city}} significantly improve their leads from their website.
 
 Let me know either way!`,
+    subject_b: null,
+    body_b: null,
+    ab_enabled: false,
   },
   {
     step_number: 2,
@@ -46,6 +53,9 @@ I genuinely think there's a real opportunity to grow {{name}}'s online presence,
 If now isn't the right time, no worries at all. Feel free to reach out whenever it makes sense.
 
 Best,`,
+    subject_b: null,
+    body_b: null,
+    ab_enabled: false,
   },
 ]
 
@@ -57,7 +67,6 @@ export default function NewSequencePage() {
   const [saving, setSaving] = useState(false)
 
   function addStep() {
-    const lastStep = steps[steps.length - 1]
     setSteps([
       ...steps,
       {
@@ -65,6 +74,9 @@ export default function NewSequencePage() {
         delay_days: 4,
         subject: '',
         body: '',
+        subject_b: null,
+        body_b: null,
+        ab_enabled: false,
       },
     ])
   }
@@ -77,8 +89,23 @@ export default function NewSequencePage() {
     setSteps(updated)
   }
 
-  function updateStep(index: number, field: keyof Step, value: string | number) {
+  function updateStep(index: number, field: keyof Step, value: string | number | boolean | null) {
     setSteps(steps.map((s, i) => (i === index ? { ...s, [field]: value } : s)))
+  }
+
+  function toggleAb(index: number) {
+    const step = steps[index]
+    if (step.ab_enabled) {
+      updateStep(index, 'ab_enabled', false)
+      updateStep(index, 'subject_b', null)
+      updateStep(index, 'body_b', null)
+    } else {
+      setSteps(steps.map((s, i) =>
+        i === index
+          ? { ...s, ab_enabled: true, subject_b: s.subject, body_b: s.body }
+          : s
+      ))
+    }
   }
 
   async function handleSave() {
@@ -88,14 +115,27 @@ export default function NewSequencePage() {
         toast.error(`Step ${step.step_number}: subject and body are required`)
         return
       }
+      if (step.ab_enabled && (!step.subject_b?.trim() || !step.body_b?.trim())) {
+        toast.error(`Step ${step.step_number}: A/B variant B subject and body are required`)
+        return
+      }
     }
 
     setSaving(true)
     try {
+      const payload = {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        steps: steps.map(({ ab_enabled, ...s }) => ({
+          ...s,
+          subject_b: ab_enabled ? s.subject_b : null,
+          body_b: ab_enabled ? s.body_b : null,
+        })),
+      }
       const res = await fetch('/api/sequences', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined, steps }),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const data = await res.json()
@@ -170,6 +210,12 @@ export default function NewSequencePage() {
                       — sends {step.delay_days} day{step.delay_days !== 1 ? 's' : ''} after previous
                     </span>
                   </CardTitle>
+                  {step.ab_enabled && (
+                    <Badge variant="secondary" className="text-xs gap-1">
+                      <FlaskConical className="h-3 w-3" />
+                      A/B Test
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5">
@@ -183,6 +229,16 @@ export default function NewSequencePage() {
                       className="w-16 h-7 text-sm"
                     />
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={`h-7 text-xs ${step.ab_enabled ? 'text-purple-600 bg-purple-50 hover:bg-purple-100' : 'text-muted-foreground'}`}
+                    onClick={() => toggleAb(index)}
+                    title="Toggle A/B test for this step"
+                  >
+                    <FlaskConical className="h-3.5 w-3.5 mr-1" />
+                    A/B
+                  </Button>
                   {steps.length > 1 && (
                     <Button
                       variant="ghost"
@@ -196,25 +252,56 @@ export default function NewSequencePage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <Label className="text-xs">Subject Line</Label>
-                <Input
-                  value={step.subject}
-                  onChange={(e) => updateStep(index, 'subject', e.target.value)}
-                  placeholder="Subject line..."
-                  className="mt-1"
-                />
+            <CardContent className="space-y-4">
+              {/* Variant A (always shown) */}
+              <div className={step.ab_enabled ? 'border rounded-lg p-3 space-y-3' : 'space-y-3'}>
+                {step.ab_enabled && (
+                  <Badge className="text-xs bg-blue-100 text-blue-700 border-blue-200">Variant A</Badge>
+                )}
+                <div>
+                  <Label className="text-xs">{step.ab_enabled ? 'Subject Line — A' : 'Subject Line'}</Label>
+                  <Input
+                    value={step.subject}
+                    onChange={(e) => updateStep(index, 'subject', e.target.value)}
+                    placeholder="Subject line..."
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">{step.ab_enabled ? 'Email Body — A' : 'Email Body'}</Label>
+                  <Textarea
+                    value={step.body}
+                    onChange={(e) => updateStep(index, 'body', e.target.value)}
+                    placeholder="Write your follow-up email..."
+                    className="mt-1 min-h-[120px] font-mono text-sm"
+                  />
+                </div>
               </div>
-              <div>
-                <Label className="text-xs">Email Body</Label>
-                <Textarea
-                  value={step.body}
-                  onChange={(e) => updateStep(index, 'body', e.target.value)}
-                  placeholder="Write your follow-up email..."
-                  className="mt-1 min-h-[160px] font-mono text-sm"
-                />
-              </div>
+
+              {/* Variant B (shown only when A/B enabled) */}
+              {step.ab_enabled && (
+                <div className="border rounded-lg p-3 space-y-3 border-purple-200 bg-purple-50/30">
+                  <Badge className="text-xs bg-purple-100 text-purple-700 border-purple-200">Variant B</Badge>
+                  <div>
+                    <Label className="text-xs">Subject Line — B</Label>
+                    <Input
+                      value={step.subject_b ?? ''}
+                      onChange={(e) => updateStep(index, 'subject_b', e.target.value)}
+                      placeholder="Alternative subject line..."
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Email Body — B</Label>
+                    <Textarea
+                      value={step.body_b ?? ''}
+                      onChange={(e) => updateStep(index, 'body_b', e.target.value)}
+                      placeholder="Alternative email body..."
+                      className="mt-1 min-h-[120px] font-mono text-sm"
+                    />
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

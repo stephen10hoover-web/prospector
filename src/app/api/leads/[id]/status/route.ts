@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
+import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { z } from 'zod'
 import { isUUID } from '@/lib/validate'
 
@@ -43,6 +43,13 @@ export async function PATCH(
       )
     }
 
+    const { data: current } = await supabase
+      .from('businesses')
+      .select('outreach_status')
+      .eq('id', id)
+      .eq('user_id', user!.id)
+      .single()
+
     const { data: updated, error } = await supabase
       .from('businesses')
       .update({ outreach_status: parsed.data.status })
@@ -57,6 +64,20 @@ export async function PATCH(
 
     if (!updated) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
+
+    // Log activity
+    if (current && current.outreach_status !== parsed.data.status) {
+      const admin = createAdminClient()
+      await admin.from('lead_activities').insert({
+        business_id: id,
+        user_id: user!.id,
+        type: 'status_changed',
+        metadata: {
+          from: current.outreach_status,
+          to: parsed.data.status,
+        },
+      }).then(null, () => null)
     }
 
     return NextResponse.json({ business: updated })
