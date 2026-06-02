@@ -27,11 +27,12 @@ const PROTECTED_PREFIXES = [
   '/inbox',
   '/analytics',
   '/settings',
+  '/internal',
 ]
 
 // ─── Routes only for guests ───────────────────────────────────────────────
 
-const GUEST_ONLY = ['/login', '/signup']
+const GUEST_ONLY = ['/login', '/signup', '/forgot-password', '/reset-password']
 
 // ─── IP extraction ────────────────────────────────────────────────────────
 

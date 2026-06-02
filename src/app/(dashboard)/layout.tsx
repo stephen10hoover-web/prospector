@@ -3,6 +3,8 @@ import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { SequenceProcessor } from '@/components/layout/SequenceProcessor'
 import { NotificationBannerProvider } from '@/components/notifications/NotificationBannerProvider'
+import { CommandPalette } from '@/components/CommandPalette'
+import { WhatsNewModal } from '@/components/changelog/WhatsNewModal'
 import { getUserPlanStatus } from '@/lib/usage'
 import { isSuperAdmin } from '@/lib/admin'
 import type { PlanId } from '@/lib/plans'
@@ -46,14 +48,24 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
+      {/* Skip navigation link for keyboard/screen-reader users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:bg-background focus:border focus:rounded-md focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
+
       <Sidebar userEmail={user.email ?? ''} userId={user.id} plan={plan} inboxUnread={inboxUnread} isAdmin={isSuperAdmin(user.email)} />
-      <main className="flex-1 overflow-y-auto">
+      <main id="main-content" className="flex-1 overflow-y-auto" aria-label="Main content">
         <NotificationBannerProvider />
         <div className="p-6 lg:p-8">
           {children}
         </div>
       </main>
       <SequenceProcessor userId={user.id} />
+      <CommandPalette />
+      <WhatsNewModal />
     </div>
   )
 }

@@ -123,6 +123,17 @@ export function SearchForm() {
     setPhase('submitting')
     startTimeRef.current = Date.now()
 
+    // Animate through phases while the request is in-flight (or polling is active)
+    pollRef.current = setInterval(() => {
+      setPhase((current) => {
+        if (current === 'idle' || current === 'done' || current === 'failed') return current
+        const elapsed = Date.now() - startTimeRef.current
+        if (elapsed < 3000) return 'searching'
+        if (elapsed < 12000) return 'analyzing'
+        return 'scoring'
+      })
+    }, 800)
+
     try {
       const res = await fetch('/api/search', {
         method: 'POST',
@@ -136,6 +147,7 @@ export function SearchForm() {
 
       if (!res.ok) {
         const err = await res.json()
+        stopPolling()
         if (err.upgrade) {
           toast.error(err.error ?? 'Monthly limit reached. Upgrade to Pro.')
         } else {
@@ -147,9 +159,19 @@ export function SearchForm() {
 
       const data = await res.json()
       const searchId = data.searchId
-      setPhase('done')
-      toast.success(`Found ${data.count ?? 0} businesses!`)
-      setTimeout(() => router.push(`/leads?search_id=${searchId}`), 500)
+
+      // If the server already completed synchronously, go straight to done
+      if (data.status === 'completed') {
+        stopPolling()
+        setPhase('done')
+        toast.success(`Found ${data.count ?? 0} businesses!`)
+        setTimeout(() => router.push(`/leads?search_id=${searchId}`), 500)
+        return
+      }
+
+      // Otherwise switch to polling the status endpoint until the search finishes
+      stopPolling()
+      pollRef.current = setInterval(() => pollStatus(searchId), 2000)
     } catch (error) {
       stopPolling()
       setPhase('failed')

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
@@ -24,6 +24,8 @@ import {
   BarChart3,
   ShieldAlert,
   CreditCard,
+  HelpCircle,
+  Activity,
 } from 'lucide-react'
 
 import type { PlanId } from '@/lib/plans'
@@ -83,6 +85,16 @@ const navItems = [
     href: '/pricing',
     icon: CreditCard,
   },
+  {
+    label: 'Activity',
+    href: '/activity',
+    icon: Activity,
+  },
+  {
+    label: 'Help',
+    href: '/help',
+    icon: HelpCircle,
+  },
 ]
 
 function getInitials(email: string): string {
@@ -94,8 +106,25 @@ export function Sidebar({ userEmail, userId, plan = 'free_trial', inboxUnread = 
   const router = useRouter()
   const supabase = createBrowserClient()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [liveUnread, setLiveUnread] = useState(inboxUnread)
+
+  // Poll for unread count every 30 seconds to keep the badge live
+  useEffect(() => {
+    setLiveUnread(inboxUnread)
+    let active = true
+    const fetchUnread = () => {
+      fetch('/api/inbox/unread')
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (active && data) setLiveUnread(data.count) })
+        .catch(() => null)
+    }
+    const id = setInterval(fetchUnread, 30_000)
+    return () => { active = false; clearInterval(id) }
+  }, [inboxUnread])
 
   async function handleLogout() {
+    // Call server-side logout to clear session cookies, then client-side signOut
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => null)
     await supabase.auth.signOut()
     toast.success('Logged out')
     router.push('/login')
@@ -122,12 +151,13 @@ export function Sidebar({ userEmail, userId, plan = 'free_trial', inboxUnread = 
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
-          const badge = item.href === '/inbox' && inboxUnread > 0 ? inboxUnread : 0
+          const badge = item.href === '/inbox' && liveUnread > 0 ? liveUnread : 0
           return (
             <Link
               key={item.href}
               href={item.href}
               onClick={() => setMobileOpen(false)}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group',
                 isActive

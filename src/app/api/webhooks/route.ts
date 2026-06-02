@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { z } from 'zod'
 import crypto from 'crypto'
+import { validateWebhookUrl } from '@/lib/webhook-validation'
 
 const VALID_EVENTS = [
   'lead_replied',
@@ -13,14 +14,19 @@ const VALID_EVENTS = [
   'sequence_completed',
 ] as const
 
+const safeUrl = z.string().url().max(500).superRefine((url, ctx) => {
+  const err = validateWebhookUrl(url)
+  if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err })
+})
+
 const createSchema = z.object({
-  url: z.string().url().max(500),
+  url: safeUrl,
   events: z.array(z.enum(VALID_EVENTS)).min(1).max(10),
   active: z.boolean().default(true),
 })
 
 const updateSchema = z.object({
-  url: z.string().url().max(500).optional(),
+  url: safeUrl.optional(),
   events: z.array(z.enum(VALID_EVENTS)).min(1).max(10).optional(),
   active: z.boolean().optional(),
 })

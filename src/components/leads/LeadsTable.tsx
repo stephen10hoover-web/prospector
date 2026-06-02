@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import toast from 'react-hot-toast'
 import type { Business, OutreachStatus } from '@/types'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +26,8 @@ import {
 
 interface LeadsTableProps {
   leads: Business[]
+  currentSort?: string
+  currentSortDir?: string
 }
 
 type SortKey = 'lead_score' | 'name' | 'city' | 'review_count' | 'rating'
@@ -57,38 +59,33 @@ function ScoreBadge({ score }: { score: number }) {
   )
 }
 
-export function LeadsTable({ leads: initialLeads }: LeadsTableProps) {
+export function LeadsTable({ leads: initialLeads, currentSort = 'lead_score', currentSortDir = 'desc' }: LeadsTableProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [leads, setLeads] = useState(initialLeads)
-  const [sortKey, setSortKey] = useState<SortKey>('lead_score')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [page, setPage] = useState(1)
   const [outreachLead, setOutreachLead] = useState<Business | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
 
+  const sortKey = currentSort as SortKey
+  const sortDir = currentSortDir as SortDir
+
   function handleSort(key: SortKey) {
+    const params = new URLSearchParams(searchParams.toString())
     if (sortKey === key) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      params.set('sort_dir', sortDir === 'asc' ? 'desc' : 'asc')
     } else {
-      setSortKey(key)
-      setSortDir('desc')
+      params.set('sort', key)
+      params.set('sort_dir', 'desc')
     }
-    setPage(1)
+    params.delete('page') // reset to page 1 on sort change
+    router.push(`${pathname}?${params.toString()}`)
   }
 
-  const sorted = [...leads].sort((a, b) => {
-    const aVal = a[sortKey]
-    const bVal = b[sortKey]
-    if (typeof aVal === 'number' && typeof bVal === 'number') {
-      return sortDir === 'asc' ? aVal - bVal : bVal - aVal
-    }
-    return sortDir === 'asc'
-      ? String(aVal).localeCompare(String(bVal))
-      : String(bVal).localeCompare(String(aVal))
-  })
-
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
-  const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Leads are already sorted server-side; just paginate client-side within the page
+  const totalPages = Math.ceil(leads.length / PAGE_SIZE)
+  const [page, setPage] = useState(1)
+  const paginated = leads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   async function handleStatusChange(leadId: string, status: OutreachStatus) {
     setUpdatingStatus(leadId)
@@ -269,7 +266,7 @@ export function LeadsTable({ leads: initialLeads }: LeadsTableProps) {
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sorted.length)} of {sorted.length} leads
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, leads.length)} of {leads.length} leads
           </p>
           <div className="flex items-center gap-2">
             <Button

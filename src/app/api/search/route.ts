@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { searchBusinesses } from '@/lib/business-discovery'
 import { analyzeWebsite } from '@/lib/website-analyzer'
@@ -92,44 +93,79 @@ export async function POST(request: NextRequest) {
       const rawBusinesses = await searchBusinesses({ category, location, radius })
       console.log('[search] Got businesses:', rawBusinesses.length)
 
-      const enriched = await Promise.all(
-        rawBusinesses.map(async (biz) => {
-          const websiteAnalysis = await analyzeWebsite(biz.website_url)
-          const leadScore = calculateLeadScore({
-            ...biz,
-            has_website: websiteAnalysis.hasWebsite,
-            website_quality_score: websiteAnalysis.qualityScore,
-          })
-
-          return {
-            search_id: search.id,
-            user_id: user?.id,
-            name: biz.name,
-            category: biz.category,
-            address: biz.address,
-            city: biz.city,
-            state: biz.state,
-            phone: biz.phone,
-            email: null,
-            website_url: biz.website_url,
-            google_maps_url: biz.google_maps_url,
-            review_count: biz.review_count,
-            rating: biz.rating,
-            has_website: websiteAnalysis.hasWebsite,
-            website_quality_score: websiteAnalysis.qualityScore,
-            website_issues: websiteAnalysis.issues,
-            lead_score: leadScore,
-            outreach_status: 'not_contacted',
-            ai_score_reasoning: null,
-          }
+      // Insert businesses immediately with preliminary scores (no website analysis yet)
+      // so the response is fast. Website analysis enriches each record in the background.
+      const preliminary = rawBusinesses.map((biz) => {
+        const hasWebsite = Boolean(biz.website_url)
+        const leadScore = calculateLeadScore({
+          ...biz,
+          has_website: hasWebsite,
+          website_quality_score: 0,
         })
-      )
+        return {
+          search_id: search.id,
+          user_id: user?.id,
+          name: biz.name,
+          category: biz.category,
+          address: biz.address,
+          city: biz.city,
+          state: biz.state,
+          phone: biz.phone,
+          email: null,
+          website_url: biz.website_url,
+          google_maps_url: biz.google_maps_url,
+          review_count: biz.review_count,
+          rating: biz.rating,
+          has_website: hasWebsite,
+          website_quality_score: 0,
+          website_issues: [] as string[],
+          lead_score: leadScore,
+          outreach_status: 'not_contacted',
+          ai_score_reasoning: null,
+        }
+      })
 
-      const { error: insertError } = await adminClient.from('businesses').insert(enriched)
+      const { data: inserted, error: insertError } = await adminClient
+        .from('businesses')
+        .insert(preliminary)
+        .select('id, website_url')
       if (insertError) console.error('[search] Insert error:', insertError)
 
-      const finalCount = enriched.length
-      await adminClient.from('searches').update({ status: 'completed', result_count: finalCount }).eq('id', search.id)
+      const finalCount = preliminary.length
+      await adminClient
+        .from('searches')
+        .update({ status: 'completed', result_count: finalCount })
+        .eq('id', search.id)
+
+      // Enrich website analysis in background after response is sent
+      if (inserted && inserted.length > 0) {
+        waitUntil(
+          (async () => {
+            for (const row of inserted) {
+              if (!row.website_url) continue
+              try {
+                const analysis = await analyzeWebsite(row.website_url)
+                const updatedScore = calculateLeadScore({
+                  ...rawBusinesses.find((b) => b.website_url === row.website_url),
+                  has_website: analysis.hasWebsite,
+                  website_quality_score: analysis.qualityScore,
+                })
+                await adminClient
+                  .from('businesses')
+                  .update({
+                    has_website: analysis.hasWebsite,
+                    website_quality_score: analysis.qualityScore,
+                    website_issues: analysis.issues,
+                    lead_score: updatedScore,
+                  })
+                  .eq('id', row.id)
+              } catch {
+                // Non-fatal: preliminary score remains
+              }
+            }
+          })()
+        )
+      }
 
       return NextResponse.json({ searchId: search.id, status: 'completed', count: finalCount })
     } catch (procError) {

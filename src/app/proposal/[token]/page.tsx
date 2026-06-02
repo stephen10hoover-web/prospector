@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase-server'
 import { PrintButton } from '@/components/audit/PrintButton'
 import { Badge } from '@/components/ui/badge'
+import { TrackProposalView } from '@/components/proposal/TrackProposalView'
 import type { Proposal, ProposalContent, ProposalPackage } from '@/types'
 
 interface ProposalPageProps {
@@ -31,20 +32,10 @@ export default async function ProposalPage({ params }: ProposalPageProps) {
   const p = proposal as Proposal & { businesses: { name: string; city: string; state: string; category: string } }
   const content = p.content as ProposalContent
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-
   return (
     <>
-      {/* Auto-fire view tracking */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            fetch('${appUrl}/api/proposals/${params.token}/view', { method: 'POST' })
-              .catch(() => null);
-          `,
-        }}
-      />
+      {/* Auto-fire view tracking via client component (avoids dangerouslySetInnerHTML) */}
+      <TrackProposalView token={params.token} />
 
       <div className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-3xl mx-auto space-y-8">

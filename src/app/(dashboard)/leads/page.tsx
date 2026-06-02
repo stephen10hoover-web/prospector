@@ -19,6 +19,8 @@ type SearchParams = {
     maxScore?: string
     search_id?: string
     page?: string
+    sort?: string
+    sort_dir?: string
   }
 
 interface LeadsPageProps {
@@ -34,11 +36,18 @@ async function getLeads(
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
 
+  const validSortKeys = ['lead_score', 'name', 'city', 'review_count', 'rating'] as const
+  type SortKey = typeof validSortKeys[number]
+  const sortKey: SortKey = validSortKeys.includes(filters.sort as SortKey)
+    ? (filters.sort as SortKey)
+    : 'lead_score'
+  const ascending = filters.sort_dir === 'asc'
+
   let query = supabase
     .from('businesses')
     .select('*', { count: 'exact' })
     .eq('user_id', userId)
-    .order('lead_score', { ascending: false })
+    .order(sortKey, { ascending })
     .range(from, to)
 
   if (filters.search_id) query = query.eq('search_id', filters.search_id)
@@ -98,7 +107,7 @@ export default async function LeadsPage({ searchParams: searchParamsPromise }: L
           </div>
         ) : (
           <>
-            <LeadsTable leads={leads} />
+            <LeadsTable leads={leads} currentSort={searchParams.sort ?? 'lead_score'} currentSortDir={searchParams.sort_dir ?? 'desc'} />
             {totalPages > 1 && (
               <div className="flex items-center justify-between pt-2">
                 <p className="text-sm text-muted-foreground">

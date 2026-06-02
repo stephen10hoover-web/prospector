@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { Users, Mail, MessageSquare, TrendingUp, Search, ArrowRight } from 'lucide-react'
 import type { DashboardStats, Search as SearchType } from '@/types'
+import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist'
 
 async function getDashboardData(userId: string): Promise<{
   stats: DashboardStats
@@ -111,6 +112,8 @@ export default async function DashboardPage() {
           Overview of your lead generation activity
         </p>
       </div>
+
+      <OnboardingChecklist />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((card) => (

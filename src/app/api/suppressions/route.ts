@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
     const { data } = await admin
       .from('domain_suppressions')
       .select('id, domain, reason, created_at')
+      .eq('added_by', user!.id)
       .order('created_at', { ascending: false })
       .limit(500)
     return NextResponse.json(data ?? [])
