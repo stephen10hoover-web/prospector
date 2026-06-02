@@ -16,6 +16,7 @@ import {
   Webhook, Ban, Link2, Plus, ToggleLeft, ToggleRight, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { EmailPreferencesCard } from '@/components/settings/EmailPreferencesCard'
 import { PLAN_META, PLAN_LIMITS, planDisplayName, type PlanId } from '@/lib/plans'
 import type { OutboundWebhook, EmailSuppression, DomainSuppression } from '@/types'
 
@@ -1218,6 +1219,8 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <EmailPreferencesCard />
 
       {/* Appearance Card */}
       <Card>

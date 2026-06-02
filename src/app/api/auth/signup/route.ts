@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient as createSSRClient } from '@supabase/ssr'
 import { cookies, headers } from 'next/headers'
+import { waitUntil } from '@vercel/functions'
+import { createAdminClient } from '@/lib/supabase-server'
+import { sendWelcomeEmail } from '@/lib/email-notifications'
+import { TRIAL_DAYS } from '@/lib/plans'
 
 // Password must be 12+ chars and contain at least one number and one letter
 const PASSWORD_REGEX = /^(?=.*[a-zA-Z])(?=.*\d).{12,}$/
@@ -59,6 +63,46 @@ export async function POST(request: NextRequest) {
           ? 'An account with this email already exists.'
           : 'Sign up failed. Please try again.'
       return NextResponse.json({ error: msg }, { status: 400 })
+    }
+
+    // Fire welcome email in the background after the response.
+    // We re-fetch the user so we have their UUID for the subscriptions upsert.
+    // A fresh SSR client is used here so the session cookie is set correctly.
+    const cookieStore2 = await cookies()
+    const supabase2 = createSSRClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) { return cookieStore2.get(name)?.value },
+          set() {},
+          remove() {},
+        },
+      }
+    )
+    const { data: { user: newUser } } = await supabase2.auth.getUser()
+
+    if (newUser) {
+      waitUntil(
+        (async () => {
+          try {
+            const admin = createAdminClient()
+            const trialStartedAt = new Date()
+            const trialEndsAt = new Date(trialStartedAt.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000)
+            // Ensure subscriptions row exists before welcome email sets the sentinel
+            await admin.from('subscriptions').upsert({
+              user_id: newUser.id,
+              plan: 'free_trial',
+              status: 'trialing',
+              trial_started_at: trialStartedAt.toISOString(),
+              trial_ends_at: trialEndsAt.toISOString(),
+            }, { onConflict: 'user_id', ignoreDuplicates: true })
+            await sendWelcomeEmail(newUser.id, newUser.email ?? email)
+          } catch (err) {
+            console.error('[signup] welcome email/subscription upsert failed:', err)
+          }
+        })()
+      )
     }
 
     return NextResponse.json({ ok: true })

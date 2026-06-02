@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createServerClient, createAdminClient } from '@/lib/supabase-server'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { SequenceProcessor } from '@/components/layout/SequenceProcessor'
+import { NotificationBannerProvider } from '@/components/notifications/NotificationBannerProvider'
 import { getUserPlanStatus } from '@/lib/usage'
 import { isSuperAdmin } from '@/lib/admin'
 import type { PlanId } from '@/lib/plans'
@@ -47,6 +48,7 @@ export default async function DashboardLayout({
     <div className="flex h-screen bg-background overflow-hidden">
       <Sidebar userEmail={user.email ?? ''} userId={user.id} plan={plan} inboxUnread={inboxUnread} isAdmin={isSuperAdmin(user.email)} />
       <main className="flex-1 overflow-y-auto">
+        <NotificationBannerProvider />
         <div className="p-6 lg:p-8">
           {children}
         </div>

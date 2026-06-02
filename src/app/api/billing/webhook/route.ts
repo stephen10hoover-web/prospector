@@ -4,6 +4,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { stripe, getPlanIdFromPriceId } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase-server'
 import { invalidateSubscriptionCache } from '@/lib/usage'
+import {
+  sendUpgradeConfirmation,
+  sendSubscriptionCanceled,
+  sendSubscriptionReactivated,
+  sendDowngradeConfirmation,
+  sendPaymentFailed1,
+} from '@/lib/email-notifications'
 import type Stripe from 'stripe'
 
 export async function POST(request: NextRequest) {
@@ -86,6 +93,12 @@ export async function POST(request: NextRequest) {
         }, { onConflict: 'user_id' })
         // Bust the subscription cache so the next request sees the new plan immediately
         invalidateSubscriptionCache(userId)
+
+        // Send upgrade confirmation (fire-and-forget — don't block webhook ack)
+        const { data: authUser } = await adminClient.auth.admin.getUserById(userId)
+        if (authUser.user?.email) {
+          sendUpgradeConfirmation(userId, authUser.user.email, resolvedPlan as 'pro' | 'team').catch(() => null)
+        }
         break
       }
 
@@ -116,6 +129,8 @@ export async function POST(request: NextRequest) {
           ? 'canceled'
           : subscription.status
 
+        const prevAttr = event.data.previous_attributes as Record<string, unknown> | undefined
+
         await adminClient.from('subscriptions').update({
           plan,
           status,
@@ -128,6 +143,33 @@ export async function POST(request: NextRequest) {
         }).eq('stripe_customer_id', customerId)
         // Bust the subscription cache so the next request sees the updated plan
         invalidateSubscriptionCache(sub.user_id)
+
+        // Fire-and-forget notification emails
+        const { data: authUser2 } = await adminClient.auth.admin.getUserById(sub.user_id)
+        const userEmail = authUser2.user?.email
+        if (userEmail) {
+          if (event.type === 'customer.subscription.deleted') {
+            const periodEnd = new Date(subscription.current_period_end * 1000)
+            sendSubscriptionCanceled(sub.user_id, userEmail, periodEnd).catch(() => null)
+          } else if (event.type === 'customer.subscription.updated') {
+            // Reactivation: cancel_at_period_end flipped from true → false
+            if (prevAttr?.cancel_at_period_end === true && subscription.cancel_at_period_end === false) {
+              sendSubscriptionReactivated(sub.user_id, userEmail).catch(() => null)
+            }
+            // Plan change: price ID changed
+            const prevItems = prevAttr?.items as { data?: { price?: { id?: string } }[] } | undefined
+            const prevPriceId = prevItems?.data?.[0]?.price?.id
+            if (prevPriceId && priceId && prevPriceId !== priceId) {
+              const prevPlan = getPlanIdFromPriceId(prevPriceId)
+              const planRank: Record<string, number> = { free_trial: 0, pro: 1, team: 2 }
+              if ((planRank[plan] ?? 0) > (planRank[prevPlan] ?? 0)) {
+                sendUpgradeConfirmation(sub.user_id, userEmail, plan as 'pro' | 'team').catch(() => null)
+              } else {
+                sendDowngradeConfirmation(sub.user_id, userEmail, plan as 'pro' | 'free_trial').catch(() => null)
+              }
+            }
+          }
+        }
         break
       }
 
@@ -181,9 +223,21 @@ export async function POST(request: NextRequest) {
         await adminClient.from('subscriptions').update({
           status: 'past_due',
         }).eq('stripe_customer_id', invoice.customer)
-        // Note: we don't invalidate the cache here because we don't have the userId
-        // without an extra DB lookup. The 5-min TTL covers this — past_due is already
-        // handled gracefully (blocks access) once the cache expires.
+
+        // Send payment failed email (first occurrence only — cron handles day-3 resend)
+        const { data: subForPayment } = await adminClient
+          .from('subscriptions')
+          .select('user_id')
+          .eq('stripe_customer_id', invoice.customer)
+          .single()
+        if (subForPayment?.user_id) {
+          const { data: authUser3 } = await adminClient.auth.admin.getUserById(subForPayment.user_id)
+          if (authUser3.user?.email) {
+            sendPaymentFailed1(subForPayment.user_id, authUser3.user.email).catch(() => null)
+          }
+          // Bust cache so past_due status propagates immediately
+          invalidateSubscriptionCache(subForPayment.user_id)
+        }
         break
       }
     }
