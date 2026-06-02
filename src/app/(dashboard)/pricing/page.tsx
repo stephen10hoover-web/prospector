@@ -282,10 +282,9 @@ export default function PricingPage() {
       )}
 
       {/* Reassurance row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center text-sm text-muted-foreground pt-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center text-sm text-muted-foreground pt-2">
         <p>Cancel anytime — no lock-in</p>
         <p>Upgrade or downgrade in seconds</p>
-        <p>All plans include a 7-day free trial</p>
       </div>
     </div>
   )
