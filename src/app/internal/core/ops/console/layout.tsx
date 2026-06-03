@@ -10,7 +10,7 @@ const NAV = [
   { label: 'Overview',  href: '/internal/core/ops/console',             icon: LayoutDashboard },
   { label: 'Users',     href: '/internal/core/ops/console/users',       icon: Users },
   { label: 'Audit Log', href: '/internal/core/ops/console/audit',       icon: Shield },
-  { label: 'Flags',     href: '/internal/core/ops/console/flags',       icon: Flag,  soon: true },
+  { label: 'Flags',     href: '/internal/core/ops/console/flags',       icon: Flag },
   { label: 'Broadcast', href: '/internal/core/ops/console/broadcast',   icon: Radio, soon: true },
 ]
 

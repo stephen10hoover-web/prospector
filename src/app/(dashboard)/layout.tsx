@@ -5,8 +5,10 @@ import { SequenceProcessor } from '@/components/layout/SequenceProcessor'
 import { NotificationBannerProvider } from '@/components/notifications/NotificationBannerProvider'
 import { CommandPalette } from '@/components/CommandPalette'
 import { WhatsNewModal } from '@/components/changelog/WhatsNewModal'
+import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner'
 import { getUserPlanStatus } from '@/lib/usage'
 import { isSuperAdmin } from '@/lib/admin'
+import { cookies } from 'next/headers'
 import type { PlanId } from '@/lib/plans'
 
 export default async function DashboardLayout({
@@ -46,6 +48,14 @@ export default async function DashboardLayout({
     // Non-fatal
   }
 
+  // Check for active impersonation session cookie
+  const cookieStore = await cookies()
+  const impersonationRaw = cookieStore.get('impersonation_session')?.value
+  let impersonation: { adminEmail: string; targetEmail: string } | null = null
+  if (impersonationRaw) {
+    try { impersonation = JSON.parse(impersonationRaw) } catch { /* malformed */ }
+  }
+
   return (
     <div className="flex h-screen bg-background overflow-hidden">
       {/* Skip navigation link for keyboard/screen-reader users */}
@@ -56,8 +66,19 @@ export default async function DashboardLayout({
         Skip to main content
       </a>
 
+      {impersonation && (
+        <ImpersonationBanner
+          adminEmail={impersonation.adminEmail}
+          targetEmail={impersonation.targetEmail}
+        />
+      )}
+
       <Sidebar userEmail={user.email ?? ''} userId={user.id} plan={plan} inboxUnread={inboxUnread} isAdmin={isSuperAdmin(user.email)} />
-      <main id="main-content" className="flex-1 overflow-y-auto" aria-label="Main content">
+      <main
+        id="main-content"
+        className={`flex-1 overflow-y-auto${impersonation ? ' pt-10' : ''}`}
+        aria-label="Main content"
+      >
         <NotificationBannerProvider />
         <div className="p-6 lg:p-8">
           {children}

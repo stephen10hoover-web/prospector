@@ -6,7 +6,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, User, CreditCard, Activity, StickyNote,
   AlertTriangle, Ban, Trash2, Loader2, Plus, X, Check,
-  RefreshCw, Clock, Shield,
+  RefreshCw, Clock, Shield, Eye,
 } from 'lucide-react'
 import type { AdminUserDetail, AdminNote } from '@/types/admin'
 import type { PlanId } from '@/lib/plans'
@@ -335,6 +335,9 @@ export default function AdminUserDetailPage() {
   const [banOpen, setBanOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
+  const [impersonateOpen, setImpersonateOpen] = useState(false)
+  const [impersonateConfirm, setImpersonateConfirm] = useState('')
+  const [impersonating, setImpersonating] = useState(false)
 
   const fetchUser = useCallback(async () => {
     setLoading(true)
@@ -426,6 +429,24 @@ export default function AdminUserDetailPage() {
     await fetchUser()
   }
 
+  async function handleImpersonate() {
+    if (impersonateConfirm !== 'IMPERSONATE') return
+    setImpersonating(true)
+    try {
+      const res = await fetch(`/api/internal/users/${id}/impersonate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmation: 'IMPERSONATE' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed')
+      window.location.href = data.redirect_url
+    } catch (e) {
+      alert((e as Error).message)
+      setImpersonating(false)
+    }
+  }
+
   async function handlePlanOverride(plan: PlanId, reason: string) {
     const res = await fetch(`/api/internal/users/${id}/plan`, {
       method: 'PATCH',
@@ -497,6 +518,43 @@ export default function AdminUserDetailPage() {
         onConfirm={handlePlanOverride}
         onClose={() => setPlanOpen(false)}
       />
+
+      {/* Impersonate confirmation */}
+      {impersonateOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setImpersonateOpen(false)}>
+          <div className="absolute inset-0 bg-black/70" />
+          <div
+            className="relative w-full max-w-md bg-[#111114] border border-white/10 rounded-xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-base font-bold text-white">View as {user.email}</h3>
+              <button onClick={() => setImpersonateOpen(false)} className="text-white/40 hover:text-white/70"><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-sm text-white/60">
+              This opens the app in &quot;view as&quot; mode. The impersonation banner will be visible. Your data is never swapped — you see your own data, not the user&apos;s.
+            </p>
+            <div>
+              <label className="text-xs text-white/50 block mb-1">Type <span className="font-mono text-white/80">IMPERSONATE</span> to confirm</label>
+              <input
+                type="text"
+                value={impersonateConfirm}
+                onChange={(e) => setImpersonateConfirm(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-white/30"
+                placeholder="IMPERSONATE"
+                autoFocus
+              />
+            </div>
+            <button
+              onClick={handleImpersonate}
+              disabled={impersonateConfirm !== 'IMPERSONATE' || impersonating}
+              className="w-full py-2 rounded-lg text-sm bg-white/10 text-white hover:bg-white/15 transition-colors disabled:opacity-40"
+            >
+              {impersonating ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Start View Session'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation */}
       {deleteOpen && (
@@ -705,6 +763,14 @@ export default function AdminUserDetailPage() {
                 <h2 className="text-sm font-semibold text-white/70 uppercase tracking-widest">Actions</h2>
               </div>
               <div className="space-y-2">
+                <button
+                  onClick={() => setImpersonateOpen(true)}
+                  className="w-full py-2 rounded-lg text-sm bg-white/5 text-white/60 hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  View as User
+                </button>
+
                 {user.is_suspended ? (
                   <button
                     onClick={handleUnsuspend}
