@@ -3,7 +3,7 @@ import { logAuditEvent } from '@/lib/audit'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import {
-  LayoutDashboard, Users, Shield, Activity, LogOut, Flag, Radio,
+  LayoutDashboard, Users, Shield, Activity, LogOut, Flag, Radio, MessageSquare,
 } from 'lucide-react'
 
 const NAV = [
@@ -11,7 +11,8 @@ const NAV = [
   { label: 'Users',     href: '/internal/core/ops/console/users',       icon: Users },
   { label: 'Audit Log', href: '/internal/core/ops/console/audit',       icon: Shield },
   { label: 'Flags',     href: '/internal/core/ops/console/flags',       icon: Flag },
-  { label: 'Broadcast', href: '/internal/core/ops/console/broadcast',   icon: Radio, soon: true },
+  { label: 'Broadcast', href: '/internal/core/ops/console/broadcast',   icon: Radio },
+  { label: 'Support',   href: '/internal/core/ops/console/support',     icon: MessageSquare },
 ]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -42,18 +43,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {NAV.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-            if (item.soon) {
-              return (
-                <div
-                  key={item.href}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-white/20 cursor-not-allowed"
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {item.label}
-                  <span className="ml-auto text-xs bg-white/5 text-white/20 px-1.5 py-0.5 rounded font-mono">soon</span>
-                </div>
-              )
-            }
             return (
               <Link
                 key={item.href}
