@@ -3,24 +3,26 @@ import { logAuditEvent } from '@/lib/audit'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import {
-  LayoutDashboard, Users, Shield, Activity, LogOut,
+  LayoutDashboard, Users, Shield, Activity, LogOut, Flag, Radio,
 } from 'lucide-react'
 
 const NAV = [
-  { label: 'Overview',  href: '/internal/core/ops/console',       icon: LayoutDashboard },
-  { label: 'Users',     href: '/internal/core/ops/console/users', icon: Users },
-  { label: 'Audit Log', href: '/internal/core/ops/console/audit', icon: Shield },
+  { label: 'Overview',  href: '/internal/core/ops/console',             icon: LayoutDashboard },
+  { label: 'Users',     href: '/internal/core/ops/console/users',       icon: Users },
+  { label: 'Audit Log', href: '/internal/core/ops/console/audit',       icon: Shield },
+  { label: 'Flags',     href: '/internal/core/ops/console/flags',       icon: Flag,  soon: true },
+  { label: 'Broadcast', href: '/internal/core/ops/console/broadcast',   icon: Radio, soon: true },
 ]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Full session + email verification — redirects to /login if not super-admin
-  const { session, ip, userAgent } = await requireSuperAdmin('admin_layout')
+  const { user, ip, userAgent } = await requireSuperAdmin('admin_layout')
 
   const reqHeaders = await headers()
   const pathname = reqHeaders.get('x-invoke-path') ?? ''
 
   await logAuditEvent({
-    actorEmail: session.user.email!,
+    actorEmail: user.email!,
     action: 'admin.session.active',
     ip,
     userAgent,
@@ -40,6 +42,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {NAV.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+            if (item.soon) {
+              return (
+                <div
+                  key={item.href}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-white/20 cursor-not-allowed"
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                  <span className="ml-auto text-xs bg-white/5 text-white/20 px-1.5 py-0.5 rounded font-mono">soon</span>
+                </div>
+              )
+            }
             return (
               <Link
                 key={item.href}
@@ -58,7 +72,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </nav>
 
         <div className="px-4 py-4 border-t border-white/10">
-          <p className="text-xs text-white/30 truncate mb-2">{session.user.email}</p>
+          <p className="text-xs text-white/30 truncate mb-2">{user.email}</p>
           <Link
             href="/dashboard"
             className="flex items-center gap-2 text-xs text-white/40 hover:text-white/70 transition-colors"

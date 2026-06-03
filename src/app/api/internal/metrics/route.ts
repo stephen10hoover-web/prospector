@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
   const churnedThisMonth = (churnedSubs ?? []).length
 
   await auditAdminAction({
-    adminEmail: auth.session.user.email!,
+    adminEmail: auth.user.email!,
     action: 'admin.metrics.viewed',
     ip: auth.ip,
   })

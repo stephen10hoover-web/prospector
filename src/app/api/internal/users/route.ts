@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     .slice(page * perPage, (page + 1) * perPage)
 
   await auditAdminAction({
-    adminEmail: auth.session.user.email!,
+    adminEmail: auth.user.email!,
     action: 'admin.users.listed',
     metadata: { page, perPage, search: search || undefined },
     ip: auth.ip,

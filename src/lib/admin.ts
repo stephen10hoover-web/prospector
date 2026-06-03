@@ -19,7 +19,7 @@ import { createServerClient } from './supabase-server'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { logAuditEvent } from './audit'
-import type { Session } from '@supabase/supabase-js'
+import type { User } from '@supabase/supabase-js'
 
 // ---------------------------------------------------------------------------
 // Identity helpers
@@ -48,32 +48,34 @@ export function isSuperAdmin(email: string | null | undefined): boolean {
 // Server Component guard
 // ---------------------------------------------------------------------------
 
-interface AdminContext {
-  session: Session
+export interface AdminContext {
+  user: User
   ip: string
   userAgent: string
 }
 
 /**
  * Call at the top of every admin Server Component page.
+ * Uses getUser() (server-side JWT validation) instead of getSession()
+ * to prevent stolen-token bypass.
  * On failure: logs a critical audit event and redirects to /login.
- * On success: returns the verified session + request metadata.
+ * On success: returns the verified user + request metadata.
  */
 export async function requireSuperAdmin(label?: string): Promise<AdminContext> {
   const supabase = await createServerClient()
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
 
   const reqHeaders = await headers()
   const ip = reqHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   const userAgent = reqHeaders.get('user-agent') ?? 'unknown'
 
-  if (!session || !isSuperAdmin(session.user.email)) {
+  if (!user || !isSuperAdmin(user.email)) {
     await logAuditEvent({
-      actorEmail: session?.user?.email ?? 'anonymous',
+      actorEmail: user?.email ?? 'anonymous',
       action: 'security.unauthorized_admin_access',
-      metadata: { label: label ?? 'admin_route', email: session?.user?.email ?? null },
+      metadata: { label: label ?? 'admin_route', email: user?.email ?? null },
       ip,
       userAgent,
       severity: 'critical',
@@ -81,7 +83,7 @@ export async function requireSuperAdmin(label?: string): Promise<AdminContext> {
     redirect('/login')
   }
 
-  return { session, ip, userAgent }
+  return { user, ip, userAgent }
 }
 
 // ---------------------------------------------------------------------------
@@ -89,27 +91,28 @@ export async function requireSuperAdmin(label?: string): Promise<AdminContext> {
 // ---------------------------------------------------------------------------
 
 type AdminVerifyResult =
-  | { ok: true; session: Session; ip: string; userAgent: string }
+  | { ok: true; user: User; ip: string; userAgent: string }
   | { ok: false; response: Response }
 
 /**
  * Call at the top of every /api/internal/* route handler.
+ * Uses getUser() (server-side JWT validation) — prevents stale token bypass.
  * Returns a discriminated union — check `result.ok` before proceeding.
  */
 export async function verifyAdminRequest(request: Request): Promise<AdminVerifyResult> {
   const supabase = await createServerClient()
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   const userAgent = request.headers.get('user-agent') ?? 'unknown'
 
-  if (!session || !isSuperAdmin(session.user.email)) {
+  if (!user || !isSuperAdmin(user.email)) {
     await logAuditEvent({
-      actorEmail: session?.user?.email ?? 'anonymous',
+      actorEmail: user?.email ?? 'anonymous',
       action: 'security.unauthorized_api_access',
-      metadata: { url: request.url, email: session?.user?.email ?? null },
+      metadata: { url: request.url, email: user?.email ?? null },
       ip,
       userAgent,
       severity: 'critical',
@@ -123,5 +126,5 @@ export async function verifyAdminRequest(request: Request): Promise<AdminVerifyR
     }
   }
 
-  return { ok: true, session, ip, userAgent }
+  return { ok: true, user, ip, userAgent }
 }
