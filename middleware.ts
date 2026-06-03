@@ -14,6 +14,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import type { CookieOptions } from '@supabase/ssr'
 
 const ADMIN_PATHS = ['/internal/', '/api/internal/']
 const SUSPENSION_BYPASS = ['/suspended', '/banned', '/login', '/signup', '/api/auth/']
@@ -31,41 +32,110 @@ export async function middleware(request: NextRequest) {
   const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p))
   const isApiRoute = pathname.startsWith('/api/')
 
-  const response = NextResponse.next({
-    request: { headers: request.headers },
-  })
+  // Create a mutable response that Supabase can attach refreshed cookies to.
+  // We reassign it inside setAll so the updated request headers propagate to
+  // Server Components (required by @supabase/ssr >= 0.5).
+  let response = NextResponse.next({ request })
 
-  // Build Supabase client that can read/refresh cookies
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+  let user: { id: string } | null = null
+
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }>) {
+            // Update request cookies so Server Components see the refreshed token
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+            // Rebuild response with updated request, then attach cookies to response too
+            response = NextResponse.next({ request })
+            cookiesToSet.forEach(({ name, value, options }) =>
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              response.cookies.set(name, value, options as any)
+            )
+          },
         },
-        set(name: string, value: string, options: Record<string, unknown>) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          response.cookies.set(name, value, options as any)
-        },
-        remove(name: string, options: Record<string, unknown>) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          response.cookies.set(name, '', options as any)
-        },
-      },
+      }
+    )
+
+    // Server-side validated JWT — prevents stale token bypass
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+
+    // -------------------------------------------------------------------------
+    // Admin path protection (Layer 1)
+    // -------------------------------------------------------------------------
+    if (isAdminPath) {
+      if (!user) {
+        if (isApiRoute) {
+          return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        const loginUrl = new URL('/login', request.url)
+        loginUrl.searchParams.set('redirectedFrom', pathname)
+        return NextResponse.redirect(loginUrl)
+      }
+      // Authorized users proceed; Layer 2 in admin.ts validates email === SUPER_ADMIN_EMAIL
+      return response
     }
-  )
 
-  // Server-side validated JWT — prevents stale token bypass
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    // -------------------------------------------------------------------------
+    // Suspension enforcement for authenticated users on non-admin paths
+    // -------------------------------------------------------------------------
+    if (user && !shouldBypassSuspensionCheck(pathname)) {
+      try {
+        const cached = suspensionCache.get(user.id)
+        let suspended = false
+        let banned = false
 
-  // -------------------------------------------------------------------------
-  // Admin path protection (Layer 1)
-  // -------------------------------------------------------------------------
-  if (isAdminPath) {
-    if (!user) {
+        if (cached && Date.now() - cached.at < SUSPENSION_TTL_MS) {
+          suspended = cached.suspended
+          banned = cached.banned
+        } else {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('is_suspended, is_banned')
+            .eq('id', user.id)
+            .single()
+
+          suspended = profile?.is_suspended ?? false
+          banned = profile?.is_banned ?? false
+          suspensionCache.set(user.id, { suspended, banned, at: Date.now() })
+        }
+
+        if (banned) {
+          if (isApiRoute) {
+            return new NextResponse(JSON.stringify({ error: 'Account banned' }), {
+              status: 403,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          }
+          return NextResponse.redirect(new URL('/banned', request.url))
+        }
+
+        if (suspended) {
+          if (isApiRoute) {
+            return new NextResponse(JSON.stringify({ error: 'Account suspended' }), {
+              status: 403,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          }
+          return NextResponse.redirect(new URL('/suspended', request.url))
+        }
+      } catch {
+        // Suspension check failed — fail open so a DB hiccup never locks users out
+      }
+    }
+  } catch {
+    // If Supabase client init or getUser() throws (e.g. missing env vars in CI),
+    // fail open for non-admin paths to avoid breaking every route.
+    if (isAdminPath) {
       if (isApiRoute) {
         return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
           status: 401,
@@ -75,53 +145,6 @@ export async function middleware(request: NextRequest) {
       const loginUrl = new URL('/login', request.url)
       loginUrl.searchParams.set('redirectedFrom', pathname)
       return NextResponse.redirect(loginUrl)
-    }
-    // Authorized users proceed; Layer 2 in admin.ts validates email === SUPER_ADMIN_EMAIL
-    return response
-  }
-
-  // -------------------------------------------------------------------------
-  // Suspension enforcement for authenticated users on non-admin paths
-  // -------------------------------------------------------------------------
-  if (user && !shouldBypassSuspensionCheck(pathname)) {
-    const cached = suspensionCache.get(user.id)
-    let suspended = false
-    let banned = false
-
-    if (cached && Date.now() - cached.at < SUSPENSION_TTL_MS) {
-      suspended = cached.suspended
-      banned = cached.banned
-    } else {
-      // Fetch from user_profiles (service-role not needed — public read of own row via JWT)
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('is_suspended, is_banned')
-        .eq('id', user.id)
-        .single()
-
-      suspended = profile?.is_suspended ?? false
-      banned = profile?.is_banned ?? false
-      suspensionCache.set(user.id, { suspended, banned, at: Date.now() })
-    }
-
-    if (banned) {
-      if (isApiRoute) {
-        return new NextResponse(JSON.stringify({ error: 'Account banned' }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      }
-      return NextResponse.redirect(new URL('/banned', request.url))
-    }
-
-    if (suspended) {
-      if (isApiRoute) {
-        return new NextResponse(JSON.stringify({ error: 'Account suspended' }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      }
-      return NextResponse.redirect(new URL('/suspended', request.url))
     }
   }
 
