@@ -1,4 +1,5 @@
 import { createServerClient as createSSRServerClient } from '@supabase/ssr'
+import type { CookieOptions } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
@@ -18,23 +19,16 @@ export async function createServerClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
+        getAll() {
+          return cookieStore.getAll()
         },
-        set(name: string, value: string, options: Record<string, unknown>) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }>) {
           try {
-            cookieStore.set({ name, value, ...options })
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
           } catch {
-            // The `set` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-          }
-        },
-        remove(name: string, options: Record<string, unknown>) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch {
-            // Same as above
+            // Called from a Server Component — middleware handles session refresh
           }
         },
       },
