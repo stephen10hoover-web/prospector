@@ -4,7 +4,7 @@ import { PrintButton } from '@/components/audit/PrintButton'
 import type { AuditContent, AuditSection } from '@/types'
 
 interface AuditPageProps {
-  params: { token: string }
+  params: Promise<{ token: string }>
 }
 
 function SectionScore({ section }: { section: AuditSection }) {
@@ -45,13 +45,14 @@ function SectionScore({ section }: { section: AuditSection }) {
   )
 }
 
-export default async function AuditReportPage({ params }: AuditPageProps) {
+export default async function AuditReportPage({ params: paramsPromise }: AuditPageProps) {
+  const { token } = await paramsPromise
   const supabase = createAdminClient()
 
   const { data: report } = await supabase
     .from('audit_reports')
     .select('content, generated_at, business_id')
-    .eq('share_token', params.token)
+    .eq('share_token', token)
     .maybeSingle()
 
   if (!report) notFound()

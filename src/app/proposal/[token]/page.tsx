@@ -6,7 +6,7 @@ import { TrackProposalView } from '@/components/proposal/TrackProposalView'
 import type { Proposal, ProposalContent, ProposalPackage } from '@/types'
 
 interface ProposalPageProps {
-  params: { token: string }
+  params: Promise<{ token: string }>
 }
 
 function formatPrice(price: number, billing: ProposalPackage['billing']): string {
@@ -18,13 +18,14 @@ function formatPrice(price: number, billing: ProposalPackage['billing']): string
   }
 }
 
-export default async function ProposalPage({ params }: ProposalPageProps) {
+export default async function ProposalPage({ params: paramsPromise }: ProposalPageProps) {
+  const { token } = await paramsPromise
   const supabase = createAdminClient()
 
   const { data: proposal } = await supabase
     .from('proposals')
     .select('*, businesses(name, city, state, category)')
-    .eq('share_token', params.token)
+    .eq('share_token', token)
     .single()
 
   if (!proposal) notFound()
@@ -35,7 +36,7 @@ export default async function ProposalPage({ params }: ProposalPageProps) {
   return (
     <>
       {/* Auto-fire view tracking via client component (avoids dangerouslySetInnerHTML) */}
-      <TrackProposalView token={params.token} />
+      <TrackProposalView token={token} />
 
       <div className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-3xl mx-auto space-y-8">
