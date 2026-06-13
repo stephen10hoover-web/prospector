@@ -54,6 +54,18 @@ async function findViaHunter(domain: string): Promise<EmailResult | null> {
   }
 }
 
+// Generate common business email patterns as a last-resort fallback.
+// Confidence is intentionally low — the caller should communicate this to the user.
+function generatePatternEmails(domain: string): EmailResult {
+  // Most small businesses use one of these; info@ is the most common
+  const prefix = ['info', 'contact', 'hello', 'admin'][0]
+  return {
+    email: `${prefix}@${domain}`,
+    confidence: 20,
+    source: 'pattern',
+  }
+}
+
 export async function findBusinessEmail(
   websiteUrl: string | null
 ): Promise<EmailResult | null> {
@@ -62,6 +74,9 @@ export async function findBusinessEmail(
   const domain = extractDomain(websiteUrl)
   if (!domain) return null
 
-  const result = await findViaHunter(domain)
-  return result
+  const hunterResult = await findViaHunter(domain)
+  if (hunterResult) return hunterResult
+
+  // Fall back to a pattern-based guess so users always get something to work with
+  return generatePatternEmails(domain)
 }

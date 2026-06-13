@@ -37,7 +37,11 @@ export function FindEmailButton({ businessId, hasWebsite, existingEmail }: FindE
         toast.error(data.error ?? 'Could not find an email for this business.')
         return
       }
-      toast.success(`Found: ${data.email} (${data.confidence}% confidence)`)
+      if (data.source === 'pattern') {
+        toast.success(`Best guess: ${data.email} — verify before sending`)
+      } else {
+        toast.success(`Found: ${data.email} (${data.confidence}% confidence)`)
+      }
       router.refresh()
     } catch {
       toast.error('Email lookup failed.')
