@@ -35,6 +35,7 @@ export default async function ProposalPage({ params: paramsPromise }: ProposalPa
 
   return (
     <>
+      <style>{`@media print { * { color: #000 !important; } }`}</style>
       {/* Auto-fire view tracking via client component (avoids dangerouslySetInnerHTML) */}
       <TrackProposalView token={token} />
 
